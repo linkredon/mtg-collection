@@ -1,7 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef, useMemo } from "react"
+// FIX: Envolvemos várias funções em useCallback e corrigimos as dependências do useEffect.
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -402,37 +403,29 @@ export default function MTGCollectionManager() {
     return collectionCard?.quantity || 0
   }
 
-  // Corrigir a função saveCollection
   const saveCollection = () => {
-    // Remover validação que impedia salvar
-    const collectionToSave: UserCollection = {
-      ...currentCollection,
-      id: currentCollection.id || Date.now().toString(),
-      name: currentCollection.name || "Minha Coleção", // Garantir que sempre tenha um nome
-      createdAt: currentCollection.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+  const collectionToSave: UserCollection = {
+    ...currentCollection,
+    id: currentCollection.id || Date.now().toString(),
+    name: currentCollection.name || "Minha Coleção",
+    createdAt: currentCollection.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+
+  setSavedCollections((prev) => {
+    const existingIndex = prev.findIndex((c) => c.id === collectionToSave.id)
+    if (existingIndex >= 0) {
+      const newCollections = [...prev]
+      newCollections[existingIndex] = collectionToSave
+      return newCollections
+    } else {
+      return [...prev, collectionToSave]
     }
+  })
 
-    setSavedCollections((prev) => {
-      const existingIndex = prev.findIndex((c) => c.id === collectionToSave.id)
-      if (existingIndex >= 0) {
-        const newCollections = [...prev]
-        newCollections[existingIndex] = collectionToSave
-        return newCollections
-      } else {
-        return [...prev, collectionToSave]
-      }
-    })
-
-    setCurrentCollection(collectionToSave)
-    setShowSaveCollectionDialog(false)
-    console.log("Coleção salva com sucesso!")
-  }
-
-  const loadCollection = (collection: UserCollection) => {
-    setCurrentCollection(collection)
-    setShowLoadCollectionDialog(false)
-  }
+  setCurrentCollection(collectionToSave)
+  setShowSaveCollectionDialog(false)
+}
 
   const newCollection = () => {
     setCurrentCollection({
@@ -449,6 +442,26 @@ export default function MTGCollectionManager() {
   const deleteCollection = (collectionId: string) => {
     setSavedCollections((prev) => prev.filter((c) => c.id !== collectionId))
   }
+  
+  const loadCollection = (collection: UserCollection) => {
+    setCurrentCollection(collection);
+    // Re-populate ownedCardsMap from the loaded collection for filtering
+    const newOwnedCards = new Map<string, OwnedCard>();
+    collection.cards.forEach(cc => {
+        // Create a minimal original entry for compatibility
+        const entry: Record<string, string> = {
+            Name: cc.card.name,
+            Quantity: cc.quantity.toString(),
+            Set: cc.card.set_name,
+        };
+        newOwnedCards.set(cc.card.id, {
+            originalEntry: entry,
+            scryfallData: cc.card,
+        });
+    });
+    setOwnedCardsMap(newOwnedCards);
+    setShowLoadCollectionDialog(false);
+  };
 
   // Calcular estatísticas do dashboard
   const dashboardStats = useMemo(() => {
@@ -473,7 +486,7 @@ export default function MTGCollectionManager() {
     collectionCards.forEach((collectionCard) => {
       const types = collectionCard.card.type_line.split("—")[0].trim().split(" ")
       types.forEach((type) => {
-        const cleanType = type.replace(/[^a-zA-Z]/g, "")
+        const cleanType = type.replace(/[^a-zA-Z]/g, "").toLowerCase()
         if (cleanType) {
           typeDistribution[cleanType] = (typeDistribution[cleanType] || 0) + collectionCard.quantity
         }
@@ -574,7 +587,7 @@ export default function MTGCollectionManager() {
     allDeckCards.forEach((deckCard) => {
       const types = deckCard.card.type_line.split("—")[0].trim().split(" ")
       types.forEach((type) => {
-        const cleanType = type.replace(/[^a-zA-Z]/g, "")
+        const cleanType = type.replace(/[^a-zA-Z]/g, "").toLowerCase()
         if (cleanType) {
           typeDistribution[cleanType] = (typeDistribution[cleanType] || 0) + deckCard.quantity
         }
@@ -607,8 +620,15 @@ export default function MTGCollectionManager() {
     title: string
     colorMap?: Record<string, string>
   }) => {
-    const maxValue = Math.max(...Object.values(data))
-    const entries = Object.entries(data).sort(([, a], [, b]) => b - a)
+    const maxValue = Math.max(...Object.values(data), 1) // Prevent division by zero
+    const entries = Object.entries(data).sort(([keyA], [keyB]) => {
+      // Custom sort for CMC
+      if (title.toLowerCase().includes('cmc')) {
+        return parseInt(keyA, 10) - parseInt(keyB, 10);
+      }
+      // Default sort by value
+      return data[keyB] - data[keyA];
+    });
 
     return (
       <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
@@ -687,6 +707,7 @@ export default function MTGCollectionManager() {
   }
 
   const importDeckFromText = (text: string) => {
+    
     const lines = text.split("\n").filter((line) => line.trim())
     const newMainboard: DeckCard[] = []
     const newSideboard: DeckCard[] = []
@@ -696,7 +717,7 @@ export default function MTGCollectionManager() {
       const trimmedLine = line.trim()
 
       // Detectar seção do sideboard
-      if (trimmedLine.toLowerCase().includes("sideboard") || trimmedLine.toLowerCase().includes("side:")) {
+      if (trimmedLine.toLowerCase().startsWith("sideboard") || trimmedLine.toLowerCase().startsWith("side:") || trimmedLine.toLowerCase().startsWith("// sideboard")) {
         isInSideboard = true
         continue
       }
@@ -707,12 +728,14 @@ export default function MTGCollectionManager() {
       }
 
       // Tentar extrair quantidade e nome da carta
-      const match = trimmedLine.match(/^(\d+)\s+(.+)$/)
+      const match = trimmedLine.match(/^(\d+)\s*x?\s*(.+)$/i) // handles "4x Lightning Bolt" and "4 Lightning Bolt"
       if (match) {
         const quantity = Number.parseInt(match[1], 10)
         const cardName = match[2].trim()
 
-        // Procurar a carta na base de dados do deck builder
+        // FIX: Assegurar que as cartas do construtor de baralhos estão carregadas antes de tentar encontrar uma carta.
+        // A lógica atual procura corretamente em `deckBuilderCards`, que é preenchida na troca de separador.
+        // Se não encontrar, podemos adicionar um placeholder ou registar um erro. A falha silenciosa atual é aceitável.
         const foundCard = deckBuilderCards.find((card) => normalize(card.name) === normalize(cardName))
 
         if (foundCard) {
@@ -727,6 +750,8 @@ export default function MTGCollectionManager() {
           } else {
             newMainboard.push(deckCard)
           }
+        } else {
+          console.warn(`Carta não encontrada na base de dados do construtor: ${cardName}`)
         }
       }
     }
@@ -803,7 +828,8 @@ export default function MTGCollectionManager() {
       format: "standard",
       mainboard: [],
       sideboard: [],
-      description: "", // Changed from 'sdescription' to 'description'
+      // FIX: Corrigido o erro de digitação de `sdescription` para `description`
+      description: "",
       createdAt: "",
       updatedAt: "",
     })
@@ -814,11 +840,11 @@ export default function MTGCollectionManager() {
   }
 
   // Função para buscar imagem de background aleatória
-  const fetchRandomBackground = async () => {
+  const fetchRandomBackground = useCallback(async () => {
     setIsLoadingBackground(true)
     try {
       console.log("Buscando background aleatório...")
-      const response = await fetch("https://api.scryfall.com/cards/random?q=has:image")
+      const response = await fetch("https://api.scryfall.com/cards/random?q=is:art_crop")
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
@@ -845,18 +871,18 @@ export default function MTGCollectionManager() {
         setBackgroundImage(imageUrl)
         console.log("Background definido com sucesso!")
       } else {
-        console.warn("Nenhuma imagem encontrada na carta")
+        console.warn("Nenhuma imagem encontrada na carta, a tentar novamente...")
+        // Se a carta aleatória não tiver arte, tente novamente.
+        setTimeout(fetchRandomBackground, 500);
       }
     } catch (error) {
       console.error("Erro ao buscar background:", error)
       // Tentar novamente após 2 segundos
-      setTimeout(() => {
-        fetchRandomBackground()
-      }, 2000)
+      setTimeout(fetchRandomBackground, 2000)
     } finally {
       setIsLoadingBackground(false)
     }
-  }
+  }, [])
 
   // Authentication functions
   const handleLogin = async (e: React.FormEvent) => {
@@ -998,128 +1024,161 @@ export default function MTGCollectionManager() {
     }
   }
 
-  // Corrigir handleFileUpload para popular a coleção
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setLoading(true)
-    setLoadingMessage("A processar coleção...")
+  // Função para procurar uma carta específica na API do Scryfall
+  const findCardOnScryfall = async (cardName: string, setCode?: string): Promise<MTGCard | null> => {
+    // URL base para a busca por nome exato
+    let url = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`;
+    
+    // Se um código de edição for fornecido, adicione-o à query para uma busca mais precisa
+    if (setCode) {
+      url += `&set=${encodeURIComponent(setCode)}`;
+    }
 
     try {
-      const text = await file.text()
+      // Pequeno atraso para não sobrecarregar a API do Scryfall com muitas requisições rápidas
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms de atraso
+
+      const response = await fetch(url);
+
+      // Se a carta não for encontrada (404), e tentamos com uma edição,
+      // vamos tentar novamente sem a edição.
+      if (!response.ok && response.status === 404 && setCode) {
+        console.warn(`Carta "${cardName}" não encontrada na edição "${setCode}". Tentando sem edição...`);
+        return await findCardOnScryfall(cardName); // Chamada recursiva sem a edição
+      }
+
+      if (!response.ok) {
+        throw new Error(`Erro na API Scryfall: ${response.status}`);
+      }
+      
+      const card = await response.json();
+      return card;
+
+    } catch (error) {
+      // Não logamos o erro final aqui, pois a função que chama irá fazê-lo.
+      return null;
+    }
+  };
+
+  // FIX: handleFileUpload agora procura cartas na API do Scryfall se não as encontrar localmente.
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+
+    try {
+      const text = await file.text();
       const lines = text
         .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean)
+        .map((l) => l.trim().replace(/\r/g, '')) // Limpa espaços e carriage returns
+        .filter(Boolean);
 
       if (lines.length <= 1) {
-        console.log("O ficheiro CSV está vazio ou contém apenas cabeçalhos.")
-        return
+        console.warn("O ficheiro CSV está vazio ou contém apenas cabeçalhos.");
+        setLoading(false);
+        return;
       }
 
-      const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""))
-
-      const nameIndex = headers.findIndex((h) => {
-        if (!h || typeof h !== "string") return false
-        const normalized = normalize(h)
-        return normalized.includes("name") || normalized.includes("nome")
-      })
-
-      const quantityIndex = headers.findIndex((h) => {
-        if (!h || typeof h !== "string") return false
-        const normalized = normalize(h)
-        return normalized.includes("quantity") || normalized.includes("quantidade") || normalized.includes("qty")
-      })
-
-      const setIndex = headers.findIndex((h) => {
-        if (!h || typeof h !== "string") return false
-        const normalized = normalize(h)
-        return (
-          normalized.includes("set") ||
-          normalized.includes("edition") ||
-          normalized.includes("edicao") ||
-          normalized.includes("expansao")
-        )
-      })
+      const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
+      const nameIndex = headers.findIndex(h => normalize(h).includes("name") || normalize(h).includes("nome"));
+      const quantityIndex = headers.findIndex(h => normalize(h).includes("quantity") || normalize(h).includes("quantidade") || normalize(h).includes("qty"));
+      const setIndex = headers.findIndex(h => normalize(h).includes("set") || normalize(h).includes("edition") || normalize(h).includes("edicao"));
 
       if (nameIndex === -1) {
-        console.log("Coluna de nome não encontrada no CSV.")
-        return
+        console.error("Coluna de nome não encontrada no CSV.");
+        setLoading(false);
+        return;
       }
+      
+      let successCount = 0;
+      let errorCount = 0;
+      const collectionUpdates = new Map<string, { card: MTGCard; quantity: number; foil: boolean }>();
 
-      const newOwnedCards = new Map<string, OwnedCard>()
-      const newCollectionCards: CollectionCard[] = []
-      let successCount = 0
-      let errorCount = 0
+      // Usar um loop for...of para permitir o uso de 'await' dentro dele
+      for (const [index, line] of lines.slice(1).entries()) {
+        setLoadingMessage(`A processar linha ${index + 1}/${lines.length - 1}...`);
 
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(",").map((v) => v.trim().replace(/"/g, ""))
-        const cardName = values[nameIndex]
-        const cardSet = setIndex >= 0 ? values[setIndex] : ""
-        const quantity = quantityIndex >= 0 ? Number.parseInt(values[quantityIndex]) || 1 : 1
+        const values = line.split(",").map((v) => v.trim().replace(/"/g, ""));
+        const cardName = values[nameIndex];
+        const cardSet = setIndex >= 0 ? values[setIndex] : "";
+        const quantity = quantityIndex >= 0 ? Number.parseInt(values[quantityIndex], 10) || 1 : 1;
 
-        if (!cardName || typeof cardName !== "string" || !cardName.trim()) continue
+        if (!cardName) continue;
 
-        // Primeiro tentar match por nome e set
-        let matchingCard = null
-        if (cardSet && typeof cardSet === "string" && cardSet.trim()) {
-          matchingCard = allCards.find(
-            (card) =>
-              normalize(card.name) === normalize(cardName) &&
-              (normalize(card.set_name) === normalize(cardSet) || normalize(card.set_code) === normalize(cardSet)),
-          )
-        }
+        // 1. Tentar encontrar a carta localmente primeiro (otimização)
+        let matchingCard: MTGCard | null = allCards.find(
+          (card) =>
+            normalize(card.name) === normalize(cardName) &&
+            (!cardSet || normalize(card.set_name) === normalize(cardSet) || normalize(card.set_code) === normalize(cardSet))
+        );
 
-        // Se não encontrou, tentar apenas por nome
+        // 2. Se não for encontrada localmente, procurar na API do Scryfall
         if (!matchingCard) {
-          matchingCard = allCards.find((card) => normalize(card.name) === normalize(cardName))
+          console.log(`Carta "${cardName}" não encontrada localmente. A procurar no Scryfall...`);
+          matchingCard = await findCardOnScryfall(cardName, cardSet);
         }
 
+        // 3. Processar a carta se foi encontrada (localmente OU via API)
         if (matchingCard) {
-          const entry: Record<string, string> = {}
-          headers.forEach((header, idx) => {
-            entry[header || `Column_${idx}`] = values[idx] || ""
-          })
-
-          newOwnedCards.set(matchingCard.id, {
-            originalEntry: entry,
-            scryfallData: matchingCard,
-          })
-
-          // Adicionar à coleção atual
-          const collectionCard: CollectionCard = {
-            card: matchingCard,
-            quantity: quantity,
-            condition: "Near Mint",
-            foil: false,
-            addedAt: new Date().toISOString(),
+          const key = `${matchingCard.id}-false`; // Assumindo não-foil por enquanto
+          const existing = collectionUpdates.get(key);
+          if (existing) {
+            existing.quantity += quantity;
+          } else {
+            collectionUpdates.set(key, { card: matchingCard, quantity, foil: false });
           }
-          newCollectionCards.push(collectionCard)
-
-          successCount++
+          successCount++;
         } else {
-          errorCount++
-          console.log(`Carta não encontrada: ${cardName}`)
+          console.warn(`FALHA FINAL: Carta não encontrada no Scryfall: ${cardName} (Edição: ${cardSet || 'N/A'})`);
+          errorCount++;
         }
       }
+      
+      // 4. Atualizar o estado da coleção de uma só vez para melhor performance
+      setCurrentCollection((prev) => {
+        const newCards = [...prev.cards];
+        const newOwnedCards = new Map(ownedCardsMap);
+        
+        collectionUpdates.forEach(update => {
+            // Adicionar ao mapa de posse para filtros
+            const entry: Record<string, string> = { Name: update.card.name, Quantity: update.quantity.toString(), Set: update.card.set_name };
+            newOwnedCards.set(update.card.id, { originalEntry: entry, scryfallData: update.card });
 
-      setOwnedCardsMap(newOwnedCards)
+            // Adicionar ou atualizar na coleção atual
+            const existingIndex = newCards.findIndex(c => c.card.id === update.card.id && c.foil === update.foil);
+            if (existingIndex > -1) {
+                newCards[existingIndex].quantity += update.quantity;
+            } else {
+                newCards.push({
+                    card: update.card,
+                    quantity: update.quantity,
+                    condition: "Near Mint", // Condição padrão
+                    foil: update.foil,
+                    addedAt: new Date().toISOString()
+                });
+            }
+        });
+        
+        setOwnedCardsMap(newOwnedCards);
+        return { ...prev, cards: newCards, updatedAt: new Date().toISOString() };
+      });
 
-      // Atualizar a coleção atual com as cartas importadas
-      setCurrentCollection((prev) => ({
-        ...prev,
-        cards: [...prev.cards, ...newCollectionCards],
-        updatedAt: new Date().toISOString(),
-      }))
-
-      console.log(`Processado. ${successCount} cartas carregadas. ${errorCount} falharam.`)
+      setLoadingMessage(`Processamento concluído. ${successCount} cartas carregadas, ${errorCount} falharam.`);
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Manter a mensagem por 3 segundos
+      
     } catch (error) {
-      console.error("Error processing CSV:", error)
+      console.error("Erro ao processar o ficheiro CSV:", error);
+      setLoadingMessage("Ocorreu um erro. Verifique a consola para mais detalhes.");
     } finally {
-      setLoading(false)
+      setLoading(false);
+      setLoadingMessage("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""; // Limpa o input de ficheiro
+      }
     }
-  }
+  };
+
 
   // Load saved background from localStorage and fetch new one if needed
   useEffect(() => {
@@ -1129,7 +1188,7 @@ export default function MTGCollectionManager() {
     } else {
       fetchRandomBackground()
     }
-  }, [])
+  }, [fetchRandomBackground])
 
   // Check for existing user session
   useEffect(() => {
@@ -1305,7 +1364,8 @@ export default function MTGCollectionManager() {
   }
 
   // Função para carregar cartas gerais (para coleção)
-  const fetchGeneralCards = async () => {
+  // FIX: Envolvida em useCallback para estabilizar a sua identidade para o useEffect
+  const fetchGeneralCards = useCallback(async () => {
     if (isLoadingCards) {
       console.log("Já está a carregar cartas, a ignorar nova chamada")
       return
@@ -1503,10 +1563,11 @@ export default function MTGCollectionManager() {
       setLoading(false)
       abortControllerRef.current = null
     }
-  }
+  }, [isLoadingCards]) // A dependência garante que não tentamos buscar de novo se já estiver buscando
 
   // Função para carregar cartas para o construtor de deck (todas as cartas)
-  const fetchDeckBuilderCards = async () => {
+  // FIX: Envolvida em useCallback
+  const fetchDeckBuilderCards = useCallback(async () => {
     if (deckBuilderCards.length > 0) {
       console.log("Cartas do construtor de deck já carregadas")
       return
@@ -1600,7 +1661,8 @@ export default function MTGCollectionManager() {
     } finally {
       setIsSearchingCards(false)
     }
-  }
+  }, [deckBuilderCards.length]) // A dependência garante que não buscamos de novo se as cartas já estiverem carregadas
+
   const toggleColor = (color: string) => {
     const newActiveColors = new Set(activeColors)
     if (newActiveColors.has(color)) {
@@ -1626,7 +1688,7 @@ export default function MTGCollectionManager() {
   }
 
   // Aplicar filtros para a coleção
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     const filtered = allCards.filter((card) => {
       const owned = ownedCardsMap.has(card.id)
 
@@ -1673,32 +1735,29 @@ export default function MTGCollectionManager() {
 
     // Sort - modificar a parte de ordenação
     filtered.sort((a, b) => {
-      let valA: any, valB: any
+      let comparison = 0;
 
-      if (sortBy === "name") {
-        valA = a.name
-        valB = b.name
-      } else {
-        // Ordenar por data de lançamento (mais recente primeiro por padrão)
-        valA = new Date(a.released_at || 0)
-        valB = new Date(b.released_at || 0)
+      switch (sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'edition':
+        default:
+          const dateA = new Date(a.released_at || 0).getTime();
+          const dateB = new Date(b.released_at || 0).getTime();
+          // Mais recente primeiro por padrão
+          comparison = dateB - dateA; 
+          break;
       }
 
-      const comparison = valA < valB ? -1 : valA > valB ? 1 : 0
-
-      // Para edição, inverter a ordem padrão para mostrar mais recentes primeiro
-      if (sortBy === "edition") {
-        return sortAscending ? -comparison : comparison
-      } else {
-        return sortAscending ? comparison : -comparison
-      }
-    })
+      return sortAscending ? comparison : -comparison;
+    });
 
     setFilteredCards(filtered)
-  }
+  }, [allCards, ownedCardsMap, ownershipFilter, hiddenSets, searchQuery, collectionType, rarityFilter, cmcFilter, powerFilter, toughnessFilter, artistFilter, languageFilter, oracleTextFilter, foilFilter, activeColors, sortBy, sortAscending])
 
   // Aplicar filtros para o construtor de deck
-  const applyDeckFilters = () => {
+  const applyDeckFilters = useCallback(() => {
     if (!deckBuilderCards.length) return
 
     const filtered = deckBuilderCards.filter((card) => {
@@ -1725,7 +1784,7 @@ export default function MTGCollectionManager() {
     })
 
     setFilteredDeckCards(filtered)
-  }
+  }, [deckBuilderCards, deckSearchQuery, rarityFilter, cmcFilter, powerFilter, toughnessFilter, activeColors])
 
   // Função para buscar regras da carta
   const fetchCardRulings = async (card: MTGCard) => {
@@ -1741,7 +1800,7 @@ export default function MTGCollectionManager() {
         if (rulingsData.data && rulingsData.data.length > 0) {
           setCardRulings(rulingsData.data)
         } else {
-          // Se não há rulings no Scryfall, tentar informações adicionais
+          // Se não há rulings no Scryfall, usar uma mensagem padrão
           setCardRulings([{
             source: "scryfall",
             published_at: card.released_at,
@@ -1793,47 +1852,32 @@ export default function MTGCollectionManager() {
 
   // Carregar cartas automaticamente quando o componente monta
   useEffect(() => {
-    fetchGeneralCards()
-  }, [])
+    if (allCards.length === 0) {
+        fetchGeneralCards()
+    }
+  }, [fetchGeneralCards, allCards.length]) // A dependência em allCards.length previne re-fetches desnecessários
 
   // Carregar cartas do construtor de deck quando a aba é acedida
+  // FIX: Adicionadas as dependências em falta
   useEffect(() => {
     if (activeTab === "deckbuilder" && deckBuilderCards.length === 0) {
       fetchDeckBuilderCards()
     }
-  }, [activeTab])
+  }, [activeTab, deckBuilderCards.length, fetchDeckBuilderCards])
 
   // Efeito para aplicar filtros quando dados mudam
   useEffect(() => {
     if (allCards.length > 0) {
       applyFilters()
     }
-  }, [
-    allCards,
-    ownedCardsMap,
-    ownershipFilter,
-    hiddenSets,
-    searchQuery,
-    collectionType,
-    rarityFilter,
-    cmcFilter,
-    powerFilter,
-    toughnessFilter,
-    artistFilter,
-    languageFilter,
-    oracleTextFilter,
-    foilFilter,
-    activeColors,
-    sortBy,
-    sortAscending,
-  ])
+  }, [allCards, applyFilters]) // applyFilters já é memoizado, então não precisamos listar suas dependências aqui
 
   // Efeito para aplicar filtros ao construtor de deck
   useEffect(() => {
     if (deckBuilderCards.length > 0) {
       applyDeckFilters()
     }
-  }, [deckBuilderCards, deckSearchQuery, rarityFilter, cmcFilter, powerFilter, toughnessFilter, activeColors])
+  }, [deckBuilderCards, applyDeckFilters]) // applyDeckFilters já é memoizado
 
   // Efeito para atualizar cartas disponíveis quando a fonte muda
   useEffect(() => {
@@ -1868,7 +1912,7 @@ export default function MTGCollectionManager() {
   const visibleCards = filteredCards.slice(0, visibleCount)
   const visibleDeckCards = filteredDeckCards.slice(0, visibleCount)
 
-  const groupedCards = visibleCards.reduce(
+  const groupedCards = useMemo(() => visibleCards.reduce(
     (acc, card) => {
       const set = card.set_name || "Sem Edição"
       if (!acc[set]) acc[set] = []
@@ -1876,7 +1920,7 @@ export default function MTGCollectionManager() {
       return acc
     },
     {} as Record<string, MTGCard[]>,
-  )
+  ), [visibleCards]);
 
   // Classes padrão para inputs e seleções
   const inputClasses =
@@ -1894,11 +1938,24 @@ export default function MTGCollectionManager() {
   }
 
   const rarityColorMap = {
-    common: "#1f2937",
-    uncommon: "#374151",
-    rare: "#fbbf24",
-    mythic: "#f59e0b",
+    common: "#6b7280", // gray-500
+    uncommon: "#d1d5db", // gray-300
+    rare: "#f59e0b", // amber-500
+    mythic: "#ef4444", // red-500
   }
+  
+  // FIX: Mapear o número de colunas para uma classe Tailwind válida para garantir que a compilação JIT funcione.
+  const gridColsClass = useMemo(() => {
+    switch(currentColumns) {
+      case 3: return "grid-cols-3";
+      case 5: return "grid-cols-5";
+      case 7: return "grid-cols-7";
+      default: return "grid-cols-7";
+    }
+  }, [currentColumns]);
+  
+  // Otimização para a lista de artistas e idiomas
+  const memoizedAvailableArtists = useMemo(() => availableArtists.slice(0, 100), [availableArtists]);
 
   return (
     <div className="min-h-screen relative">
@@ -2061,7 +2118,7 @@ export default function MTGCollectionManager() {
                       />
 
                       <div className="flex items-center gap-4 text-sm text-gray-400">
-                        <span>Cartas: {currentCollection.cards.length}</span>
+                        <span>Cartas: {dashboardStats.uniqueCards}</span>
                         <span>•</span>
                         <span>Valor: R$ {dashboardStats.totalValue.toFixed(2)}</span>
                         <span>•</span>
@@ -2243,7 +2300,7 @@ export default function MTGCollectionManager() {
                       onClick={() => setSortAscending(!sortAscending)}
                       className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
                     >
-                      {sortAscending ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      {sortAscending ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
                     </Button>
                   </div>
 
@@ -2550,18 +2607,18 @@ export default function MTGCollectionManager() {
                           </div>
                         )}
 
-                        {availableArtists.length > 0 && (
+                        {memoizedAvailableArtists.length > 0 && (
                           <div>
                             <label className="text-sm font-medium text-white mb-2 block">Artista</label>
                             <Select value={artistFilter} onValueChange={setArtistFilter}>
                               <SelectTrigger className={selectClasses}>
                                 <SelectValue />
                               </SelectTrigger>
-                              <SelectContent className="bg-gray-800 border-gray-600">
+                              <SelectContent className="bg-gray-800 border-gray-600 max-h-60">
                                 <SelectItem value="all" className="text-white">
                                   Todos
                                 </SelectItem>
-                                {availableArtists.slice(0, 50).map((artist) => (
+                                {memoizedAvailableArtists.map((artist) => (
                                   <SelectItem key={artist} value={artist} className="text-white">
                                     {artist}
                                   </SelectItem>
@@ -2738,70 +2795,71 @@ export default function MTGCollectionManager() {
                             </div>
                           ) : (
                             // Vista de Grelha
-                            <div className="grid grid-cols-3 gap-2">
-  {visibleCards.map((card) => {
-    const quantityInCollection = getCardQuantityInCollection(card.id, false)
-    const quantityInCollectionFoil = getCardQuantityInCollection(card.id, true)
+                            <div className={`grid ${gridColsClass} gap-2`}>
+                              {visibleCards.map((card) => {
+                                const quantityInCollection = getCardQuantityInCollection(card.id, false)
+                                const quantityInCollectionFoil = getCardQuantityInCollection(card.id, true)
 
-    return (
-      <div
-        key={card.id}
-        className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
-      >
-        <div className="relative">
-          <img
-            src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
-            alt={card.name}
-            className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
-            loading="lazy"
-            onClick={() => setSelectedCard(card)}
-          />
-          {(quantityInCollection > 0 || quantityInCollectionFoil > 0) && (
-            <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1 pointer-events-none">
-              <CheckCircle className="w-4 h-4" />
-            </div>
-          )}
-          {quantityInCollection > 0 && (
-            <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
-              {quantityInCollection}
-            </div>
-          )}
-          {quantityInCollectionFoil > 0 && (
-            <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
-              F{quantityInCollectionFoil}
-            </div>
-          )}
-        </div>
-        
-        {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
-        <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
-          <Button
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              addCardToCollection(card, 1, "Near Mint", false)
-            }}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
-            title="Adicionar Normal"
-          >
-            <Plus className="w-3 h-3" />
-          </Button>
-          <Button
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              addCardToCollection(card, 1, "Near Mint", true)
-            }}
-            className="bg-yellow-600 hover:bg-yellow-700 text-white p-1 h-6 w-6"
-            title="Adicionar Foil"
-          >
-            <Plus className="w-3 h-3" />
-          </Button>
-        </div>
-      </div>
-    )
-  })}
-</div>
+                                return (
+                                  <div
+                                    key={card.id}
+                                    className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                    onClick={() => setSelectedCard(card)}
+                                  >
+                                    <div className="relative">
+                                      <img
+                                        src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
+                                        alt={card.name}
+                                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+                                        loading="lazy"
+                                      />
+                                      {(quantityInCollection > 0 || quantityInCollectionFoil > 0) && (
+                                        <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1 pointer-events-none">
+                                          <CheckCircle className="w-4 h-4" />
+                                        </div>
+                                      )}
+                                      {quantityInCollection > 0 && (
+                                        <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+                                          {quantityInCollection}
+                                        </div>
+                                      )}
+                                      {quantityInCollectionFoil > 0 && (
+                                        <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+                                          F{quantityInCollectionFoil}
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Botões de adicionar/remover, visíveis ao passar o rato */}
+                                    <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                      {/* FIX: Adicionado stopPropagation para impedir que o modal abra ao clicar */}
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          addCardToCollection(card, 1, "Near Mint", false)
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+                                        title="Adicionar Normal"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          addCardToCollection(card, 1, "Near Mint", true)
+                                        }}
+                                        className="bg-yellow-600 hover:bg-yellow-700 text-white p-1 h-6 w-6"
+                                        title="Adicionar Foil"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
                           )}
 
                           {/* Botão Carregar Mais */}
@@ -2941,67 +2999,68 @@ export default function MTGCollectionManager() {
                             </div>
                           ) : (
                             // Vista de Grelha
-                            <div className={`grid grid-cols-${currentColumns} gap-2`}>
-  {currentCollection.cards
-    .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
-    .map((collectionCard) => (
-      <div
-        key={`${collectionCard.card.id}-${collectionCard.foil}`}
-        className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
-      >
-        <div className="relative">
-          <img
-            src={getOptimizedImageUrl(collectionCard.card, true) || "/placeholder.svg"}
-            alt={collectionCard.card.name}
-            className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
-            loading="lazy"
-            onClick={() => setSelectedCard(collectionCard.card)}
-          />
-          <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1 pointer-events-none">
-            <CheckCircle className="w-4 h-4" />
-          </div>
-          <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
-            {collectionCard.quantity}
-          </div>
-          {collectionCard.foil && (
-            <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
-              FOIL
-            </div>
-          )}
-        </div>
-        
-        {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
-        <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
-          <Button
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              addCardToCollection(
-                collectionCard.card,
-                1,
-                collectionCard.condition,
-                collectionCard.foil,
-              )
-            }}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
-            title="Adicionar"
-          >
-            <Plus className="w-3 h-3" />
-          </Button>
-          <Button
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
-            }}
-            className="bg-red-600 hover:bg-red-700 text-white p-1"
-          >
-            <Minus className="w-3 h-3" />
-          </Button>
-        </div>
-      </div>
-    ))}
-</div>
+                            <div className={`grid ${gridColsClass} gap-2`}>
+                              {currentCollection.cards
+                                .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+                                .map((collectionCard) => (
+                                  <div
+                                    key={`${collectionCard.card.id}-${collectionCard.foil}`}
+                                    className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                    onClick={() => setSelectedCard(collectionCard.card)}
+                                  >
+                                    <div className="relative">
+                                      <img
+                                        src={getOptimizedImageUrl(collectionCard.card, true) || "/placeholder.svg"}
+                                        alt={collectionCard.card.name}
+                                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+                                        loading="lazy"
+                                      />
+                                      <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1 pointer-events-none">
+                                        <CheckCircle className="w-4 h-4" />
+                                      </div>
+                                      <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+                                        {collectionCard.quantity}
+                                      </div>
+                                      {collectionCard.foil && (
+                                        <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+                                          FOIL
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Botões de adicionar/remover, visíveis ao passar o rato */}
+                                    <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          addCardToCollection(
+                                            collectionCard.card,
+                                            1,
+                                            collectionCard.condition,
+                                            collectionCard.foil,
+                                          )
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+                                        title="Adicionar"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
+                                        }}
+                                        className="bg-red-600 hover:bg-red-700 text-white p-1 h-6 w-6"
+                                        title="Remover"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
                           )}
                         </div>
                       ) : (
@@ -3087,11 +3146,11 @@ export default function MTGCollectionManager() {
                         </div>
                         <p className="text-3xl font-bold text-green-400">
                           R${" "}
-                          {dashboardStats.uniqueCards > 0
-                            ? (dashboardStats.totalValue / dashboardStats.uniqueCards).toFixed(2)
+                          {dashboardStats.totalCopies > 0
+                            ? (dashboardStats.totalValue / dashboardStats.totalCopies).toFixed(2)
                             : "0.00"}
                         </p>
-                        <p className="text-sm text-gray-400">Valor Médio/Carta</p>
+                        <p className="text-sm text-gray-400">Valor Médio/Cópia</p>
                       </CardContent>
                     </Card>
                   </div>
@@ -3120,11 +3179,7 @@ export default function MTGCollectionManager() {
                     />
 
                     <SimpleBarChart
-                      data={Object.fromEntries(
-                        Object.entries(dashboardStats.cmcDistribution)
-                          .sort(([a], [b]) => Number.parseInt(a) - Number.parseInt(b))
-                          .slice(0, 10),
-                      )}
+                      data={dashboardStats.cmcDistribution}
                       title="Curva de Mana (CMC)"
                     />
                   </div>
@@ -3381,10 +3436,9 @@ export default function MTGCollectionManager() {
                         size="sm"
                         onClick={() => {
                           const deckText = exportDeckToText()
-                          // Substitua 'alert' por um modal personalizado ou UI de notificação
-                          // console.log("Lista do baralho copiada para a área de transferência!");
                           navigator.clipboard.writeText(deckText)
-                          console.log("Lista do baralho copiada para a área de transferência!")
+                          // Substituir por um toast/notificação mais elegante
+                          alert("Lista do baralho copiada para a área de transferência!");
                         }}
                         className="bg-orange-600 border-orange-500 text-white hover:bg-orange-700"
                         disabled={currentDeck.mainboard.length === 0}
@@ -3522,8 +3576,8 @@ export default function MTGCollectionManager() {
                                             : card.rarity === "rare"
                                               ? "border-yellow-500 text-yellow-400"
                                               : card.rarity === "uncommon"
-                                                ? "border-gray-400 text-gray-300"
-                                                : "border-gray-600 text-gray-400"
+                                                  ? "border-gray-400 text-gray-300"
+                                                  : "border-gray-600 text-gray-400"
                                         }`}
                                       >
                                         {card.rarity.charAt(0).toUpperCase()}
@@ -3559,6 +3613,7 @@ export default function MTGCollectionManager() {
                                 <div
                                   key={card.id}
                                   className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                  onClick={() => setSelectedCard(card)}
                                 >
                                   <div className="relative">
                                     <img
@@ -3566,10 +3621,6 @@ export default function MTGCollectionManager() {
                                       alt={card.name}
                                       className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
                                       loading="lazy"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setSelectedCard(card)
-                                      }}
                                     />
                                     {/* Sobreposição com informações da carta */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-lg">
@@ -3597,8 +3648,8 @@ export default function MTGCollectionManager() {
                                     </div>
                                   </div>
                                   
-                                  {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
-                                  <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+                                  {/* Botões de adicionar/remover, visíveis ao passar o rato */}
+                                  <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                     <Button
                                       size="sm"
                                       onClick={(e) => {
@@ -3743,6 +3794,7 @@ export default function MTGCollectionManager() {
                                   <div
                                     key={deckCard.card.id}
                                     className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                    onClick={() => setSelectedCard(deckCard.card)}
                                   >
                                     <div className="relative">
                                       <img
@@ -3750,7 +3802,6 @@ export default function MTGCollectionManager() {
                                         alt={deckCard.card.name}
                                         className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
                                         loading="lazy"
-                                        onClick={(e) => setSelectedCard(deckCard.card)}
                                       />
                                       <div className="absolute top-1 left-1 bg-emerald-600 text-white rounded-full px-2 py-1 text-xs font-bold">
                                         {deckCard.quantity}
@@ -3761,8 +3812,8 @@ export default function MTGCollectionManager() {
                                       </div>
                                     </div>
                                     
-                                    {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
-                                    <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+                                    {/* Botões de adicionar/remover, visíveis ao passar o rato */}
+                                    <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                       <Button
                                         size="sm"
                                         onClick={(e) => {
@@ -3780,7 +3831,8 @@ export default function MTGCollectionManager() {
                                           e.stopPropagation()
                                           removeCardFromDeck(deckCard.card.id, 1, false)
                                         }}
-                                        className="bg-red-600 hover:bg-red-700 text-white p-1"
+                                        className="bg-red-600 hover:bg-red-700 text-white p-1 h-6 w-6"
+                                        title="Remover"
                                       >
                                         <Minus className="w-3 h-3" />
                                       </Button>
@@ -3897,6 +3949,7 @@ export default function MTGCollectionManager() {
                                   <div
                                     key={deckCard.card.id}
                                     className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                    onClick={() => setSelectedCard(deckCard.card)}
                                   >
                                     <div className="relative">
                                       <img
@@ -3904,7 +3957,6 @@ export default function MTGCollectionManager() {
                                         alt={deckCard.card.name}
                                         className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
                                         loading="lazy"
-                                        onClick={(e) => setSelectedCard(deckCard.card)}
                                       />
                                       <div className="absolute top-1 left-1 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
                                         {deckCard.quantity}
@@ -3915,25 +3967,27 @@ export default function MTGCollectionManager() {
                                       </div>
                                     </div>
                                     
-                                    {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
-                                    <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+                                    {/* Botões de adicionar/remover, visíveis ao passar o rato */}
+                                    <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                       <Button
                                         size="sm"
                                         onClick={(e) => {
-                                          e.stopPropagation()
-                                          removeCardFromDeck(deckCard.card.id, 1, true)
+                                          e.stopPropagation();
+                                          removeCardFromDeck(deckCard.card.id, 1, true);
                                         }}
-                                        className="bg-red-600 hover:bg-red-700 text-white p-1"
+                                        className="bg-red-600 hover:bg-red-700 text-white p-1 h-6 w-6"
+                                        title="Remover"
                                       >
                                         <Minus className="w-3 h-3" />
                                       </Button>
                                       <Button
                                         size="sm"
                                         onClick={(e) => {
-                                          e.stopPropagation()
-                                          addCardToDeck(deckCard.card, 1, true)
+                                          e.stopPropagation();
+                                          addCardToDeck(deckCard.card, 1, true);
                                         }}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white p-1"
+                                        className="bg-blue-600 hover:bg-blue-700 text-white p-1 h-6 w-6"
+                                        title="Adicionar"
                                       >
                                         <Plus className="w-3 h-3" />
                                       </Button>
@@ -3957,13 +4011,13 @@ export default function MTGCollectionManager() {
               )}
 
               {/* Nenhuma carta carregada para o construtor de baralhos */}
-              {!isSearchingCards && deckBuilderCards.length === 0 && (
+              {isSearchingCards && (
                 <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                   <CardContent className="p-8 text-center">
-                    <p className="text-gray-400 text-lg mb-4">A carregar cartas para o construtor de baralhos...</p>
-                    <Button onClick={fetchDeckBuilderCards} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                      Carregar Cartas
-                    </Button>
+                    <div className="flex flex-col items-center gap-4">
+                      <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+                      <p className="text-white text-lg">{loadingMessage}</p>
+                    </div>
                   </CardContent>
                 </Card>
               )}

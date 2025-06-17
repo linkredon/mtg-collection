@@ -33,8 +33,6 @@ import {
   Minus,
   Download,
   Settings,
-  Eye,
-  EyeOff,
 } from "lucide-react"
 
 interface MTGCard {
@@ -1374,12 +1372,15 @@ function MTGCollectionManager() {
     setLoadingMessage("Carregando cartas...")
 
     try {
+      // Usar uma query mais simples e confiável
       let url = "https://api.scryfall.com/cards/search?q=game:paper&unique=prints&order=released"
       let cards: MTGCard[] = []
       let pageCount = 0
-      const maxPages = 20 // Limite para não carregar demais
+      const maxPages = 30 // Reduzir para evitar rate limits
+      let consecutiveErrors = 0
+      const maxConsecutiveErrors = 3
 
-      while (url && pageCount < maxPages) {
+      while (url && pageCount < maxPages && consecutiveErrors < maxConsecutiveErrors) {
         // Verificar se foi cancelado
         if (abortControllerRef.current?.signal.aborted) {
           console.log("Carregamento foi cancelado")
@@ -1387,37 +1388,87 @@ function MTGCollectionManager() {
         }
 
         pageCount++
-        setLoadingMessage(`Carregando cartas (página ${pageCount})...`)
+        setLoadingMessage(`Carregando cartas (página ${pageCount}/${maxPages})...`)
         console.log(`Carregando página ${pageCount}`)
 
-        const response = await fetch(url, {
-          signal: abortControllerRef.current.signal,
-        })
+        try {
+          // Delay progressivo para evitar rate limits
+          const delay = Math.min(200 + pageCount * 50, 1000)
+          await new Promise((r) => setTimeout(r, delay))
 
-        if (!response.ok) {
-          throw new Error(`HTTP error: ${response.status}`)
+          const response = await fetch(url, {
+            signal: abortControllerRef.current.signal,
+            headers: {
+              Accept: "application/json",
+              "User-Agent": "MTGCollectionManager/1.0",
+            },
+          })
+
+          if (!response.ok) {
+            if (response.status === 429) {
+              // Rate limit - aguardar mais tempo
+              console.log("Rate limit atingido, aguardando 2 segundos...")
+              await new Promise((r) => setTimeout(r, 2000))
+              consecutiveErrors++
+              continue
+            } else if (response.status >= 500) {
+              // Erro do servidor - tentar novamente
+              console.log(`Erro do servidor (${response.status}), tentando novamente...`)
+              consecutiveErrors++
+              await new Promise((r) => setTimeout(r, 1000))
+              continue
+            } else {
+              throw new Error(`HTTP error: ${response.status} ${response.statusText}`)
+            }
+          }
+
+          const data = await response.json()
+
+          if (!data.data || data.data.length === 0) {
+            console.log("Nenhum dado retornado, parando")
+            break
+          }
+
+          // Filtrar cartas com imagens válidas
+          const newCards = data.data.filter((c: MTGCard) => {
+            return (
+              c.image_uris?.normal ||
+              c.card_faces?.[0]?.image_uris?.normal ||
+              c.image_uris?.small ||
+              c.card_faces?.[0]?.image_uris?.small
+            )
+          })
+
+          cards = cards.concat(newCards)
+          consecutiveErrors = 0 // Reset contador de erros
+          console.log(`Página ${pageCount}: ${newCards.length} cartas válidas, total: ${cards.length}`)
+
+          // Verificar se há mais páginas
+          if (!data.has_more || !data.next_page) {
+            console.log("Não há mais páginas")
+            break
+          }
+
+          url = data.next_page
+        } catch (error: any) {
+          if (error.name === "AbortError") {
+            console.log("Requisição cancelada")
+            return
+          }
+
+          consecutiveErrors++
+          console.error(`Erro na página ${pageCount}:`, error.message)
+
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            console.log("Muitos erros consecutivos, parando o carregamento")
+            break
+          }
+
+          // Aguardar antes de tentar novamente
+          const retryDelay = Math.min(1000 * consecutiveErrors, 5000)
+          console.log(`Aguardando ${retryDelay}ms antes de tentar novamente...`)
+          await new Promise((r) => setTimeout(r, retryDelay))
         }
-
-        const data = await response.json()
-
-        if (!data.data || data.data.length === 0) {
-          console.log("Nenhum dado retornado, parando")
-          break
-        }
-
-        const newCards = data.data.filter((c: MTGCard) => c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal)
-
-        cards = cards.concat(newCards)
-        console.log(`Página ${pageCount}: ${newCards.length} cartas, total: ${cards.length}`)
-
-        // Verificar se há mais páginas
-        if (!data.has_more || !data.next_page) {
-          console.log("Não há mais páginas")
-          break
-        }
-
-        url = data.next_page
-        await new Promise((r) => setTimeout(r, 150)) // Delay entre requisições
       }
 
       // Verificar se foi cancelado antes de processar
@@ -1426,28 +1477,75 @@ function MTGCollectionManager() {
         return
       }
 
-      const sortedCards = cards.sort(
-        (a, b) => new Date(a.released_at || 0).getTime() - new Date(b.released_at || 0).getTime(),
+      if (cards.length === 0) {
+        console.log("Nenhuma carta foi carregada, tentando fallback...")
+        // Tentar uma query ainda mais simples
+        try {
+          const fallbackResponse = await fetch("https://api.scryfall.com/cards/search?q=*&page=1", {
+            signal: abortControllerRef.current?.signal,
+            headers: {
+              Accept: "application/json",
+              "User-Agent": "MTGCollectionManager/1.0",
+            },
+          })
+
+          if (fallbackResponse.ok) {
+            const fallbackData = await fallbackResponse.json()
+            if (fallbackData.data && fallbackData.data.length > 0) {
+              cards = fallbackData.data.filter(
+                (c: MTGCard) => c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal,
+              )
+              console.log(`Fallback carregou ${cards.length} cartas`)
+            }
+          }
+        } catch (fallbackError) {
+          console.error("Erro no fallback:", fallbackError)
+        }
+      }
+
+      // Remover duplicatas baseado no ID
+      const uniqueCards = cards.filter((card, index, self) => index === self.findIndex((c) => c.id === card.id))
+
+      // Ordenar por data de lançamento (mais recente primeiro)
+      const sortedCards = uniqueCards.sort(
+        (a, b) => new Date(b.released_at || 0).getTime() - new Date(a.released_at || 0).getTime(),
       )
 
-      console.log(`Carregamento concluído: ${sortedCards.length} cartas`)
+      console.log(`Carregamento concluído: ${sortedCards.length} cartas únicas de ${cards.length} cartas totais`)
 
-      setAllCards(sortedCards)
+      if (sortedCards.length > 0) {
+        setAllCards(sortedCards)
 
-      // Extrair opções de filtro
-      const languages = Array.from(new Set(sortedCards.map((card) => card.lang).filter(Boolean))).sort()
-      setAvailableLanguages(languages)
+        // Extrair opções de filtro
+        const languages = Array.from(new Set(sortedCards.map((card) => card.lang).filter(Boolean))).sort()
+        setAvailableLanguages(languages)
 
-      const artists = Array.from(new Set(sortedCards.map((card) => card.artist).filter(Boolean))).sort()
-      setAvailableArtists(artists)
+        const artists = Array.from(new Set(sortedCards.map((card) => card.artist).filter(Boolean))).sort()
+        setAvailableArtists(artists)
 
-      console.log(`${sortedCards.length} cartas carregadas.`)
+        console.log(`${sortedCards.length} cartas carregadas com sucesso.`)
+
+        // Mostrar estatísticas
+        const rarityCount = sortedCards.reduce(
+          (acc, card) => {
+            acc[card.rarity] = (acc[card.rarity] || 0) + 1
+            return acc
+          },
+          {} as Record<string, number>,
+        )
+
+        console.log("Distribuição por raridade:", rarityCount)
+      } else {
+        console.warn("Nenhuma carta foi carregada")
+        setLoadingMessage("Erro ao carregar cartas. Tente novamente.")
+      }
     } catch (error: any) {
       if (error.name === "AbortError") {
         console.log("Requisição cancelada")
         return
       }
-      console.error("Error loading cards:", error)
+      console.error("Erro geral no carregamento:", error)
+      setLoadingMessage("Erro ao carregar cartas. Verifique sua conexão.")
     } finally {
       setIsLoadingCards(false)
       setLoading(false)
@@ -1466,47 +1564,91 @@ function MTGCollectionManager() {
     setLoadingMessage("Carregando cartas para o deck builder...")
 
     try {
+      // Usar query mais específica para deck building (cartas únicas)
       let url = "https://api.scryfall.com/cards/search?q=game:paper&unique=cards&order=name"
       let cards: MTGCard[] = []
       let pageCount = 0
-      const maxPages = 30 // Limite para deck builder
+      const maxPages = 25 // Limite menor para deck builder
+      let consecutiveErrors = 0
+      const maxConsecutiveErrors = 3
 
-      while (url && pageCount < maxPages) {
+      while (url && pageCount < maxPages && consecutiveErrors < maxConsecutiveErrors) {
         pageCount++
+        setLoadingMessage(`Carregando cartas para deck builder (${pageCount}/${maxPages})...`)
         console.log(`Carregando página ${pageCount} para deck builder`)
 
-        const response = await fetch(url)
+        try {
+          // Delay para evitar rate limits
+          const delay = Math.min(300 + pageCount * 50, 1000)
+          await new Promise((r) => setTimeout(r, delay))
 
-        if (!response.ok) {
-          throw new Error(`HTTP error: ${response.status}`)
+          const response = await fetch(url, {
+            headers: {
+              Accept: "application/json",
+              "User-Agent": "MTGCollectionManager/1.0",
+            },
+          })
+
+          if (!response.ok) {
+            if (response.status === 429) {
+              await new Promise((r) => setTimeout(r, 2000))
+              consecutiveErrors++
+              continue
+            } else if (response.status >= 500) {
+              consecutiveErrors++
+              await new Promise((r) => setTimeout(r, 1000))
+              continue
+            } else {
+              throw new Error(`HTTP error: ${response.status}`)
+            }
+          }
+
+          const data = await response.json()
+
+          if (!data.data || data.data.length === 0) {
+            break
+          }
+
+          const newCards = data.data.filter(
+            (c: MTGCard) => c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal,
+          )
+
+          cards = cards.concat(newCards)
+          consecutiveErrors = 0
+          console.log(`Deck builder página ${pageCount}: ${newCards.length} cartas, total: ${cards.length}`)
+
+          if (!data.has_more || !data.next_page) {
+            break
+          }
+
+          url = data.next_page
+        } catch (error: any) {
+          consecutiveErrors++
+          console.error(`Erro na página ${pageCount} do deck builder:`, error.message)
+
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            console.log("Muitos erros consecutivos no deck builder, parando")
+            break
+          }
+
+          const retryDelay = Math.min(1000 * consecutiveErrors, 3000)
+          await new Promise((r) => setTimeout(r, retryDelay))
         }
-
-        const data = await response.json()
-
-        if (!data.data || data.data.length === 0) {
-          break
-        }
-
-        const newCards = data.data.filter((c: MTGCard) => c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal)
-        cards = cards.concat(newCards)
-
-        if (!data.has_more || !data.next_page) {
-          break
-        }
-
-        url = data.next_page
-        await new Promise((r) => setTimeout(r, 100))
       }
 
-      setDeckBuilderCards(cards)
-      console.log(`${cards.length} cartas carregadas para o deck builder`)
+      // Remover duplicatas e ordenar
+      const uniqueCards = cards
+        .filter((card, index, self) => index === self.findIndex((c) => c.name === card.name))
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      setDeckBuilderCards(uniqueCards)
+      console.log(`${uniqueCards.length} cartas únicas carregadas para o deck builder`)
     } catch (error) {
       console.error("Erro ao carregar cartas do deck builder:", error)
     } finally {
       setIsSearchingCards(false)
     }
   }
-
   const toggleColor = (color: string) => {
     const newActiveColors = new Set(activeColors)
     if (newActiveColors.has(color)) {
@@ -2659,102 +2801,171 @@ function MTGCollectionManager() {
                         </div>
                       </div>
                     </CardHeader>
+
                     <CardContent className="max-h-[800px] overflow-y-auto">
                       {currentCollection.cards.length > 0 ? (
-                        <div className="space-y-2">
-                          {currentCollection.cards
-                            .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
-                            .map((collectionCard) => (
-                              <div
-                                key={`${collectionCard.card.id}-${collectionCard.foil}`}
-                                className="flex items-center gap-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
-                              >
-                                <img
-                                  src={getOptimizedImageUrl(collectionCard.card, true) || "/placeholder.svg"}
-                                  alt={collectionCard.card.name}
-                                  className="w-12 h-16 rounded object-cover cursor-pointer"
-                                  onClick={() => setSelectedCard(collectionCard.card)}
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-white text-sm font-medium truncate">
-                                    {collectionCard.card.name}
-                                    {collectionCard.foil && (
-                                      <span className="ml-2 text-yellow-400 text-xs">(Foil)</span>
-                                    )}
-                                  </p>
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className="text-xs"
-                                      dangerouslySetInnerHTML={{
-                                        __html: formatManaSymbols(collectionCard.card.mana_cost || ""),
-                                      }}
+                        <div className="space-y-4">
+                          {textView ? (
+                            // Text View
+                            <div className="space-y-2">
+                              {currentCollection.cards
+                                .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+                                .map((collectionCard) => (
+                                  <div
+                                    key={`${collectionCard.card.id}-${collectionCard.foil}`}
+                                    className="flex items-center gap-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
+                                  >
+                                    <img
+                                      src={getOptimizedImageUrl(collectionCard.card, true) || "/placeholder.svg"}
+                                      alt={collectionCard.card.name}
+                                      className="w-12 h-16 rounded object-cover cursor-pointer"
+                                      onClick={() => setSelectedCard(collectionCard.card)}
                                     />
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${
-                                        collectionCard.card.rarity === "mythic"
-                                          ? "border-orange-500 text-orange-400"
-                                          : collectionCard.card.rarity === "rare"
-                                            ? "border-yellow-500 text-yellow-400"
-                                            : collectionCard.card.rarity === "uncommon"
-                                              ? "border-gray-400 text-gray-300"
-                                              : "border-gray-600 text-gray-400"
-                                      }`}
-                                    >
-                                      {collectionCard.card.rarity.charAt(0).toUpperCase()}
-                                    </Badge>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-sm font-medium truncate">
+                                        {collectionCard.card.name}
+                                        {collectionCard.foil && (
+                                          <span className="ml-2 text-yellow-400 text-xs">(Foil)</span>
+                                        )}
+                                      </p>
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className="text-xs"
+                                          dangerouslySetInnerHTML={{
+                                            __html: formatManaSymbols(collectionCard.card.mana_cost || ""),
+                                          }}
+                                        />
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${
+                                            collectionCard.card.rarity === "mythic"
+                                              ? "border-orange-500 text-orange-400"
+                                              : collectionCard.card.rarity === "rare"
+                                                ? "border-yellow-500 text-yellow-400"
+                                                : collectionCard.card.rarity === "uncommon"
+                                                  ? "border-gray-400 text-gray-300"
+                                                  : "border-gray-600 text-gray-400"
+                                          }`}
+                                        >
+                                          {collectionCard.card.rarity.charAt(0).toUpperCase()}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-gray-400 text-xs truncate">
+                                        {collectionCard.card.set_name} • {collectionCard.condition}
+                                      </p>
+                                      <p className="text-gray-500 text-xs">
+                                        R${" "}
+                                        {(getEstimatedPrice(collectionCard.card) * collectionCard.quantity).toFixed(2)}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        size="sm"
+                                        onClick={() =>
+                                          removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
+                                        }
+                                        className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </Button>
+                                      <span className="text-white text-sm font-medium w-8 text-center">
+                                        {collectionCard.quantity}
+                                      </span>
+                                      <Button
+                                        size="sm"
+                                        onClick={() =>
+                                          addCardToCollection(
+                                            collectionCard.card,
+                                            1,
+                                            collectionCard.condition,
+                                            collectionCard.foil,
+                                          )
+                                        }
+                                        className="w-6 h-6 p-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() =>
+                                          removeCardFromCollection(
+                                            collectionCard.card.id,
+                                            collectionCard.foil,
+                                            collectionCard.quantity,
+                                          )
+                                        }
+                                        className="w-6 h-6 p-0 bg-gray-600 hover:bg-gray-700 text-white text-xs ml-2"
+                                        title="Remover todas"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </Button>
+                                    </div>
                                   </div>
-                                  <p className="text-gray-400 text-xs truncate">
-                                    {collectionCard.card.set_name} • {collectionCard.condition}
-                                  </p>
-                                  <p className="text-gray-500 text-xs">
-                                    R$ {(getEstimatedPrice(collectionCard.card) * collectionCard.quantity).toFixed(2)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    size="sm"
-                                    onClick={() =>
-                                      removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
-                                    }
-                                    className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
+                                ))}
+                            </div>
+                          ) : (
+                            // Grid View
+                            <div className={`grid grid-cols-${currentColumns} gap-2`}>
+                              {currentCollection.cards
+                                .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+                                .map((collectionCard) => (
+                                  <div
+                                    key={`${collectionCard.card.id}-${collectionCard.foil}`}
+                                    className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
                                   >
-                                    <Minus className="w-3 h-3" />
-                                  </Button>
-                                  <span className="text-white text-sm font-medium w-8 text-center">
-                                    {collectionCard.quantity}
-                                  </span>
-                                  <Button
-                                    size="sm"
-                                    onClick={() =>
-                                      addCardToCollection(
-                                        collectionCard.card,
-                                        1,
-                                        collectionCard.condition,
-                                        collectionCard.foil,
-                                      )
-                                    }
-                                    className="w-6 h-6 p-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    onClick={() =>
-                                      removeCardFromCollection(
-                                        collectionCard.card.id,
-                                        collectionCard.foil,
-                                        collectionCard.quantity,
-                                      )
-                                    }
-                                    className="w-6 h-6 p-0 bg-gray-600 hover:bg-gray-700 text-white text-xs ml-2"
-                                    title="Remover todas"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
+                                    <div className="relative">
+                                      <img
+                                        src={getOptimizedImageUrl(collectionCard.card, true) || "/placeholder.svg"}
+                                        alt={collectionCard.card.name}
+                                        className="w-full h-auto rounded-lg shadow-lg"
+                                        loading="lazy"
+                                        onClick={() => setSelectedCard(collectionCard.card)}
+                                      />
+                                      <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1">
+                                        <CheckCircle className="w-4 h-4" />
+                                      </div>
+                                      <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
+                                        {collectionCard.quantity}
+                                      </div>
+                                      {collectionCard.foil && (
+                                        <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold">
+                                          FOIL
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2">
+                                        <Button
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            addCardToCollection(
+                                              collectionCard.card,
+                                              1,
+                                              collectionCard.condition,
+                                              collectionCard.foil,
+                                            )
+                                          }}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                        >
+                                          <Plus className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
+                                          }}
+                                          className="bg-red-600 hover:bg-red-700 text-white"
+                                        >
+                                          <Minus className="w-4 h-4" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="text-center py-8">
@@ -3367,354 +3578,333 @@ Sideboard:
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-white text-xl">
-                          Meu Deck ({deckStats.totalCards + deckStats.sideboardCards})
+                          Deck Atual ({currentDeck.mainboard.length + currentDeck.sideboard.length})
                         </CardTitle>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="border-blue-500 text-blue-400">
-                            {deckStats.totalCards} main
+                            {deckStats.totalCards} cartas
                           </Badge>
-                          <Badge variant="outline" className="border-purple-500 text-purple-400">
-                            {deckStats.sideboardCards} side
-                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setTextView(!textView)}
+                            className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+                          >
+                            {textView ? <Grid3X3 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                          </Button>
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent className="max-h-[800px] overflow-y-auto custom-scrollbar">
-                      <div className="space-y-6">
-                        {/* Mainboard Section */}
-                        <div>
-                          <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                            <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-                            Mainboard ({deckStats.totalCards})
-                          </h3>
-                          {currentDeck.mainboard.length > 0 ? (
-                            <div className="space-y-2">
-                              {currentDeck.mainboard
-                                .sort((a, b) => a.card.cmc - b.card.cmc || a.card.name.localeCompare(b.card.name))
-                                .map((deckCard) => (
-                                  <div
-                                    key={deckCard.card.id}
-                                    className="flex items-center gap-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
-                                  >
-                                    <img
-                                      src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
-                                      alt={deckCard.card.name}
-                                      className="w-12 h-16 rounded object-cover cursor-pointer"
-                                      onClick={() => setSelectedCard(deckCard.card)}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
-                                      <div className="flex items-center gap-2">
-                                        <span
-                                          className="text-xs"
-                                          dangerouslySetInnerHTML={{
-                                            __html: formatManaSymbols(deckCard.card.mana_cost || ""),
-                                          }}
-                                        />
-                                        <Badge
-                                          variant="outline"
-                                          className={`text-xs ${
-                                            deckCard.card.rarity === "mythic"
-                                              ? "border-orange-500 text-orange-400"
-                                              : deckCard.card.rarity === "rare"
-                                                ? "border-yellow-500 text-yellow-400"
-                                                : deckCard.card.rarity === "uncommon"
-                                                  ? "border-gray-400 text-gray-300"
-                                                  : "border-gray-600 text-gray-400"
-                                          }`}
-                                        >
-                                          {deckCard.card.rarity.charAt(0).toUpperCase()}
-                                        </Badge>
+                      {currentDeck.mainboard.length > 0 || currentDeck.sideboard.length > 0 ? (
+                        <div className="space-y-6">
+                          {/* Mainboard */}
+                          {currentDeck.mainboard.length > 0 && (
+                            <div>
+                              <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+                                <span className="w-3 h-3 bg-blue-600 rounded-full"></span>
+                                Mainboard ({currentDeck.mainboard.reduce((sum, card) => sum + card.quantity, 0)})
+                              </h3>
+                              {textView ? (
+                                <div className="space-y-2">
+                                  {currentDeck.mainboard.map((deckCard) => (
+                                    <div
+                                      key={deckCard.card.id}
+                                      className="flex items-center gap-3 p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
+                                    >
+                                      <img
+                                        src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
+                                        alt={deckCard.card.name}
+                                        className="w-10 h-14 rounded object-cover cursor-pointer"
+                                        onClick={() => setSelectedCard(deckCard.card)}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
+                                        <div className="flex items-center gap-2">
+                                          <span
+                                            className="text-xs"
+                                            dangerouslySetInnerHTML={{
+                                              __html: formatManaSymbols(deckCard.card.mana_cost || ""),
+                                            }}
+                                          />
+                                          <Badge
+                                            variant="outline"
+                                            className={`text-xs ${
+                                              deckCard.card.rarity === "mythic"
+                                                ? "border-orange-500 text-orange-400"
+                                                : deckCard.card.rarity === "rare"
+                                                  ? "border-yellow-500 text-yellow-400"
+                                                  : deckCard.card.rarity === "uncommon"
+                                                    ? "border-gray-400 text-gray-300"
+                                                    : "border-gray-600 text-gray-400"
+                                            }`}
+                                          >
+                                            {deckCard.card.rarity.charAt(0).toUpperCase()}
+                                          </Badge>
+                                        </div>
                                       </div>
-                                      <p className="text-gray-400 text-xs truncate">{deckCard.card.set_name}</p>
-                                      <p className="text-gray-500 text-xs">
-                                        R$ {(getEstimatedPrice(deckCard.card) * deckCard.quantity).toFixed(2)}
-                                      </p>
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => removeCardFromDeck(deckCard.card.id, 1, false)}
+                                          className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
+                                        >
+                                          <Minus className="w-3 h-3" />
+                                        </Button>
+                                        <span className="text-white text-sm font-medium w-6 text-center">
+                                          {deckCard.quantity}
+                                        </span>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => addCardToDeck(deckCard.card, 1, false)}
+                                          className="w-6 h-6 p-0 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                        </Button>
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-1">
-                                      <Button
-                                        size="sm"
-                                        onClick={() => removeCardFromDeck(deckCard.card.id, 1, false)}
-                                        className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
-                                      >
-                                        <Minus className="w-3 h-3" />
-                                      </Button>
-                                      <span className="text-white text-sm font-medium w-8 text-center">
-                                        {deckCard.quantity}
-                                      </span>
-                                      <Button
-                                        size="sm"
-                                        onClick={() => addCardToDeck(deckCard.card, 1, false)}
-                                        className="w-6 h-6 p-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                                      >
-                                        <Plus className="w-3 h-3" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        onClick={() => setCardQuantity(deckCard.card.id, 0, false)}
-                                        className="w-6 h-6 p-0 bg-gray-600 hover:bg-gray-700 text-white text-xs ml-2"
-                                        title="Remover todas"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </Button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-4 gap-2">
+                                  {currentDeck.mainboard.map((deckCard) => (
+                                    <div
+                                      key={deckCard.card.id}
+                                      className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                    >
+                                      <div className="relative">
+                                        <img
+                                          src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
+                                          alt={deckCard.card.name}
+                                          className="w-full h-auto rounded-lg shadow-lg"
+                                          loading="lazy"
+                                          onClick={() => setSelectedCard(deckCard.card)}
+                                        />
+                                        <div className="absolute top-1 left-1 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
+                                          {deckCard.quantity}
+                                        </div>
+                                      </div>
+                                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
+                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-1">
+                                          <Button
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              removeCardFromDeck(deckCard.card.id, 1, false)
+                                            }}
+                                            className="bg-red-600 hover:bg-red-700 text-white p-1"
+                                          >
+                                            <Minus className="w-3 h-3" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              addCardToDeck(deckCard.card, 1, false)
+                                            }}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white p-1"
+                                          >
+                                            <Plus className="w-3 h-3" />
+                                          </Button>
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-4 bg-gray-700/20 rounded-lg">
-                              <p className="text-gray-400 text-sm">Nenhuma carta no mainboard</p>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div>
 
-                        {/* Sideboard Section */}
-                        <div>
-                          <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                            <span className="w-3 h-3 bg-purple-500 rounded-full"></span>
-                            Sideboard ({deckStats.sideboardCards})
-                          </h3>
-                          {currentDeck.sideboard.length > 0 ? (
-                            <div className="space-y-2">
-                              {currentDeck.sideboard
-                                .sort((a, b) => a.card.cmc - b.card.cmc || a.card.name.localeCompare(b.card.name))
-                                .map((deckCard) => (
-                                  <div
-                                    key={deckCard.card.id}
-                                    className="flex items-center gap-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
-                                  >
-                                    <img
-                                      src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
-                                      alt={deckCard.card.name}
-                                      className="w-12 h-16 rounded object-cover cursor-pointer"
-                                      onClick={() => setSelectedCard(deckCard.card)}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
-                                      <div className="flex items-center gap-2">
-                                        <span
-                                          className="text-xs"
-                                          dangerouslySetInnerHTML={{
-                                            __html: formatManaSymbols(deckCard.card.mana_cost || ""),
-                                          }}
-                                        />
-                                        <Badge
-                                          variant="outline"
-                                          className={`text-xs ${
-                                            deckCard.card.rarity === "mythic"
-                                              ? "border-orange-500 text-orange-400"
-                                              : deckCard.card.rarity === "rare"
-                                                ? "border-yellow-500 text-yellow-400"
-                                                : deckCard.card.rarity === "uncommon"
-                                                  ? "border-gray-400 text-gray-300"
-                                                  : "border-gray-600 text-gray-400"
-                                          }`}
-                                        >
-                                          {deckCard.card.rarity.charAt(0).toUpperCase()}
-                                        </Badge>
+                          {/* Sideboard */}
+                          {currentDeck.sideboard.length > 0 && (
+                            <div>
+                              <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+                                <span className="w-3 h-3 bg-purple-600 rounded-full"></span>
+                                Sideboard ({currentDeck.sideboard.reduce((sum, card) => sum + card.quantity, 0)})
+                              </h3>
+                              {textView ? (
+                                <div className="space-y-2">
+                                  {currentDeck.sideboard.map((deckCard) => (
+                                    <div
+                                      key={deckCard.card.id}
+                                      className="flex items-center gap-3 p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
+                                    >
+                                      <img
+                                        src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
+                                        alt={deckCard.card.name}
+                                        className="w-10 h-14 rounded object-cover cursor-pointer"
+                                        onClick={() => setSelectedCard(deckCard.card)}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
+                                        <div className="flex items-center gap-2">
+                                          <span
+                                            className="text-xs"
+                                            dangerouslySetInnerHTML={{
+                                              __html: formatManaSymbols(deckCard.card.mana_cost || ""),
+                                            }}
+                                          />
+                                          <Badge
+                                            variant="outline"
+                                            className={`text-xs ${
+                                              deckCard.card.rarity === "mythic"
+                                                ? "border-orange-500 text-orange-400"
+                                                : deckCard.card.rarity === "rare"
+                                                  ? "border-yellow-500 text-yellow-400"
+                                                  : deckCard.card.rarity === "uncommon"
+                                                    ? "border-gray-400 text-gray-300"
+                                                    : "border-gray-600 text-gray-400"
+                                            }`}
+                                          >
+                                            {deckCard.card.rarity.charAt(0).toUpperCase()}
+                                          </Badge>
+                                        </div>
                                       </div>
-                                      <p className="text-gray-400 text-xs truncate">{deckCard.card.set_name}</p>
-                                      <p className="text-gray-500 text-xs">
-                                        R$ {(getEstimatedPrice(deckCard.card) * deckCard.quantity).toFixed(2)}
-                                      </p>
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => removeCardFromDeck(deckCard.card.id, 1, true)}
+                                          className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
+                                        >
+                                          <Minus className="w-3 h-3" />
+                                        </Button>
+                                        <span className="text-white text-sm font-medium w-6 text-center">
+                                          {deckCard.quantity}
+                                        </span>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => addCardToDeck(deckCard.card, 1, true)}
+                                          className="w-6 h-6 p-0 bg-purple-600 hover:bg-purple-700 text-white text-xs"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                        </Button>
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-1">
-                                      <Button
-                                        size="sm"
-                                        onClick={() => removeCardFromDeck(deckCard.card.id, 1, true)}
-                                        className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
-                                      >
-                                        <Minus className="w-3 h-3" />
-                                      </Button>
-                                      <span className="text-white text-sm font-medium w-8 text-center">
-                                        {deckCard.quantity}
-                                      </span>
-                                      <Button
-                                        size="sm"
-                                        onClick={() => addCardToDeck(deckCard.card, 1, true)}
-                                        className="w-6 h-6 p-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                                      >
-                                        <Plus className="w-3 h-3" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        onClick={() => setCardQuantity(deckCard.card.id, 0, true)}
-                                        className="w-6 h-6 p-0 bg-gray-600 hover:bg-gray-700 text-white text-xs ml-2"
-                                        title="Remover todas"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </Button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-4 gap-2">
+                                  {currentDeck.sideboard.map((deckCard) => (
+                                    <div
+                                      key={deckCard.card.id}
+                                      className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                    >
+                                      <div className="relative">
+                                        <img
+                                          src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
+                                          alt={deckCard.card.name}
+                                          className="w-full h-auto rounded-lg shadow-lg"
+                                          loading="lazy"
+                                          onClick={() => setSelectedCard(deckCard.card)}
+                                        />
+                                        <div className="absolute top-1 left-1 bg-purple-600 text-white rounded-full px-2 py-1 text-xs font-bold">
+                                          {deckCard.quantity}
+                                        </div>
+                                      </div>
+                                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
+                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-1">
+                                          <Button
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              removeCardFromDeck(deckCard.card.id, 1, true)
+                                            }}
+                                            className="bg-red-600 hover:bg-red-700 text-white p-1"
+                                          >
+                                            <Minus className="w-3 h-3" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              addCardToDeck(deckCard.card, 1, true)
+                                            }}
+                                            className="bg-purple-600 hover:bg-purple-700 text-white p-1"
+                                          >
+                                            <Plus className="w-3 h-3" />
+                                          </Button>
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-4 bg-gray-700/20 rounded-lg">
-                              <p className="text-gray-400 text-sm">Nenhuma carta no sideboard</p>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
-                      </div>
+                      ) : (
+                        <div className="text-center py-8">
+                          <p className="text-gray-400 text-lg mb-2">Seu deck está vazio</p>
+                          <p className="text-gray-500 text-sm">
+                            Use os botões <Plus className="w-4 h-4 inline mx-1" /> na coluna da esquerda para adicionar
+                            cartas
+                          </p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
               )}
-
-              {/* Loading State for Deck Builder */}
-              {isSearchingCards && (
-                <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
-                  <CardContent className="p-8 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-                      <p className="text-white text-lg">Carregando cartas para o deck builder...</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* No Cards Loaded for Deck Builder */}
-              {!isSearchingCards && deckBuilderCards.length === 0 && (
-                <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
-                  <CardContent className="p-8 text-center">
-                    <p className="text-gray-400 text-lg mb-4">Nenhuma carta carregada para o deck builder.</p>
-                    <Button onClick={fetchDeckBuilderCards} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                      Carregar Cartas
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
             </TabsContent>
           </Tabs>
 
-          {/* Card Detail Modal */}
-          <Dialog open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
-            <DialogContent className="bg-gray-900 border-gray-700 max-w-4xl max-h-[90vh] overflow-y-auto">
+          {/* Card Detail Dialog */}
+          <Dialog open={selectedCard !== null} onOpenChange={() => setSelectedCard(null)}>
+            <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-white">{selectedCard?.name}</DialogTitle>
+              </DialogHeader>
               {selectedCard && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:order-1">
                     <img
-                      src={getOptimizedImageUrl(selectedCard) || "/placeholder.svg"}
+                      src={
+                        selectedCard.image_uris?.normal ||
+                        selectedCard.card_faces?.[0]?.image_uris?.normal ||
+                        "/placeholder.svg" ||
+                        "/placeholder.svg" ||
+                        "/placeholder.svg" ||
+                        "/placeholder.svg"
+                      }
                       alt={selectedCard.name}
-                      className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
+                      className="w-full h-auto rounded-lg shadow-lg"
                     />
-                    <div className="text-center space-y-2">
-                      <p className="text-gray-400 text-sm">Preço Estimado</p>
-                      <p className="text-2xl font-bold text-yellow-400">
-                        R$ {getEstimatedPrice(selectedCard).toFixed(2)}
-                      </p>
-                    </div>
                   </div>
-                  <div className="space-y-4">
-                    <div>
-                      <h2 className="text-2xl font-bold text-white mb-2">{selectedCard.name}</h2>
-                      <div className="flex items-center gap-2 mb-4">
-                        <span
-                          className="text-lg"
-                          dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.mana_cost || "") }}
-                        />
-                        <Badge
-                          variant="outline"
-                          className={`${
-                            selectedCard.rarity === "mythic"
-                              ? "border-orange-500 text-orange-400"
-                              : selectedCard.rarity === "rare"
-                                ? "border-yellow-500 text-yellow-400"
-                                : selectedCard.rarity === "uncommon"
-                                  ? "border-gray-400 text-gray-300"
-                                  : "border-gray-600 text-gray-400"
-                          }`}
-                        >
-                          {selectedCard.rarity.charAt(0).toUpperCase() + selectedCard.rarity.slice(1)}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-gray-400 text-sm">Tipo</p>
-                        <p className="text-white">{selectedCard.type_line}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-gray-400 text-sm">Edição</p>
-                        <p className="text-white">
-                          {selectedCard.set_name} ({selectedCard.set_code?.toUpperCase()})
-                        </p>
-                      </div>
-
-                      {selectedCard.oracle_text && (
-                        <div>
-                          <p className="text-gray-400 text-sm">Texto</p>
-                          <div
-                            className="text-white text-sm leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.oracle_text) }}
-                          />
-                        </div>
-                      )}
-
-                      {(selectedCard.power || selectedCard.toughness) && (
-                        <div>
-                          <p className="text-gray-400 text-sm">Poder/Resistência</p>
-                          <p className="text-white">
-                            {selectedCard.power}/{selectedCard.toughness}
-                          </p>
-                        </div>
-                      )}
-
-                      <div>
-                        <p className="text-gray-400 text-sm">Artista</p>
-                        <p className="text-white">{selectedCard.artist}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-gray-400 text-sm">Número do Colecionador</p>
-                        <p className="text-white">{selectedCard.collector_number}</p>
-                      </div>
-
-                      {activeTab === "collection" && (
-                        <div className="pt-4 border-t border-gray-700">
-                          <p className="text-gray-400 text-sm mb-3">Adicionar à Coleção</p>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", false)}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white flex-1"
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Normal
-                            </Button>
-                            <Button
-                              onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", true)}
-                              className="bg-yellow-600 hover:bg-yellow-700 text-white flex-1"
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Foil
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {activeTab === "deckbuilder" && (
-                        <div className="pt-4 border-t border-gray-700">
-                          <p className="text-gray-400 text-sm mb-3">Adicionar ao Deck</p>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => addCardToDeck(selectedCard, 1, false)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Mainboard
-                            </Button>
-                            <Button
-                              onClick={() => addCardToDeck(selectedCard, 1, true)}
-                              className="bg-purple-600 hover:bg-purple-700 text-white flex-1"
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Sideboard
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                  <div className="space-y-3 md:order-2">
+                    <p className="text-gray-400">
+                      <strong>Set:</strong> {selectedCard.set_name} ({selectedCard.set_code.toUpperCase()})
+                    </p>
+                    <p className="text-gray-400">
+                      <strong>Raridade:</strong> {selectedCard.rarity}
+                    </p>
+                    <p className="text-gray-400">
+                      <strong>Tipo:</strong> {selectedCard.type_line}
+                    </p>
+                    {selectedCard.oracle_text && (
+                      <p className="text-gray-400">
+                        <strong>Texto do Oráculo:</strong> {selectedCard.oracle_text}
+                      </p>
+                    )}
+                    {selectedCard.mana_cost && (
+                      <p className="text-gray-400">
+                        <strong>Custo de Mana:</strong>{" "}
+                        <span dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.mana_cost) }} />
+                      </p>
+                    )}
+                    {selectedCard.power && selectedCard.toughness && (
+                      <p className="text-gray-400">
+                        <strong>Poder/Resistência:</strong> {selectedCard.power}/{selectedCard.toughness}
+                      </p>
+                    )}
+                    <p className="text-gray-400">
+                      <strong>Artista:</strong> {selectedCard.artist}
+                    </p>
+                    <p className="text-gray-400">
+                      <strong>Idioma:</strong> {selectedCard.lang}
+                    </p>
+                    <p className="text-gray-400">
+                      <strong>Lançamento:</strong> {new Date(selectedCard.released_at).toLocaleDateString()}
+                    </p>
                   </div>
                 </div>
               )}
@@ -3723,18 +3913,19 @@ Sideboard:
 
           {/* Login Dialog */}
           <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
-            <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
+            <DialogContent className="bg-gray-900 border-gray-700">
               <DialogHeader>
-                <DialogTitle className="text-white text-center">{isRegistering ? "Criar Conta" : "Entrar"}</DialogTitle>
+                <DialogTitle className="text-white">{isRegistering ? "Criar Conta" : "Entrar"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleLogin} className="space-y-4">
                 {isRegistering && (
                   <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Nome Completo</label>
+                    <label className="text-sm font-medium text-white mb-2 block">Nome</label>
                     <Input
                       type="text"
+                      placeholder="Seu nome completo"
                       value={loginForm.name}
-                      onChange={(e) => setLoginForm((prev) => ({ ...prev, name: e.target.value }))}
+                      onChange={(e) => setLoginForm({ ...loginForm, name: e.target.value })}
                       className={inputClasses}
                       required
                     />
@@ -3744,86 +3935,64 @@ Sideboard:
                   <label className="text-sm font-medium text-white mb-2 block">Email</label>
                   <Input
                     type="email"
+                    placeholder="seuemail@exemplo.com"
                     value={loginForm.email}
-                    onChange={(e) => setLoginForm((prev) => ({ ...prev, email: e.target.value }))}
+                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                     className={inputClasses}
                     required
                   />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-white mb-2 block">Senha</label>
-                  <Input
-                    type="password"
-                    value={loginForm.password}
-                    onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
-                    className={inputClasses}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      type={showCurrentPassword ? "text" : "password"}
+                      placeholder="Senha"
+                      value={loginForm.password}
+                      onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                      className={inputClasses}
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                    >
+                      {showCurrentPassword ? "Ocultar" : "Mostrar"}
+                    </Button>
+                  </div>
                 </div>
                 {isRegistering && (
                   <div>
                     <label className="text-sm font-medium text-white mb-2 block">Confirmar Senha</label>
-                    <Input
-                      type="password"
-                      value={loginForm.confirmPassword}
-                      onChange={(e) => setLoginForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                      className={inputClasses}
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirmar Senha"
+                        value={loginForm.confirmPassword}
+                        onChange={(e) => setLoginForm({ ...loginForm, confirmPassword: e.target.value })}
+                        className={inputClasses}
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                      >
+                        {showConfirmPassword ? "Ocultar" : "Mostrar"}
+                      </Button>
+                    </div>
                   </div>
                 )}
-                {/* Adicionar após o formulário de login, antes dos botões */}
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-gray-600" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-gray-900 px-2 text-gray-400">Ou continue com</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleSocialLogin("google")}
-                    disabled={loginLoading}
-                    className="bg-white hover:bg-gray-100 text-gray-900 border-gray-300"
-                  >
-                    <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                      <path
-                        fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                      />
-                    </svg>
-                    Continuar com Google
-                  </Button>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowLoginDialog(false)}
-                    className="flex-1 bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                  >
-                    Cancelar
-                  </Button>
+                <div className="flex justify-between items-center">
                   <Button
                     type="submit"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2"
                     disabled={loginLoading}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
                     {loginLoading ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -3833,165 +4002,170 @@ Sideboard:
                       "Entrar"
                     )}
                   </Button>
-                </div>
-                <div className="text-center">
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="link"
                     onClick={toggleAuthMode}
-                    className="text-emerald-400 hover:text-emerald-300"
+                    className="text-gray-400 hover:text-gray-300"
                   >
-                    {isRegistering ? "Já tem uma conta? Entrar" : "Não tem conta? Criar uma"}
+                    {isRegistering ? "Já tem uma conta? Entrar" : "Criar uma conta"}
                   </Button>
                 </div>
               </form>
+              <div className="mt-4 text-center">
+                <p className="text-gray-500 mb-2">Ou entre com:</p>
+                <div className="flex justify-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSocialLogin("google")}
+                    className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+                  >
+                    Google
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSocialLogin("facebook")}
+                    className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+                  >
+                    Facebook
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSocialLogin("github")}
+                    className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+                  >
+                    GitHub
+                  </Button>
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
 
           {/* Profile Dialog */}
           <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
-            <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
+            <DialogContent className="bg-gray-900 border-gray-700">
               <DialogHeader>
-                <DialogTitle className="text-white text-center">Meu Perfil</DialogTitle>
+                <DialogTitle className="text-white">Editar Perfil</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleProfileUpdate} className="space-y-4">
-                <div className="text-center mb-4">
-                  <img
-                    src={currentUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.email}`}
-                    alt={currentUser?.name}
-                    className="w-20 h-20 rounded-full mx-auto border-4 border-emerald-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+              {currentUser && (
+                <form onSubmit={handleProfileUpdate} className="space-y-4">
                   <div>
                     <label className="text-sm font-medium text-white mb-2 block">Nome</label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Primeiro Nome"
+                        value={profileForm.firstName}
+                        onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                        className={inputClasses}
+                      />
+                      <Input
+                        type="text"
+                        placeholder="Sobrenome"
+                        value={profileForm.lastName}
+                        onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                        className={inputClasses}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-white mb-2 block">Email</label>
                     <Input
-                      type="text"
-                      value={profileForm.firstName}
-                      onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                      type="email"
+                      placeholder="seuemail@exemplo.com"
+                      value={profileForm.email}
+                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
                       className={inputClasses}
+                      required
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Sobrenome</label>
-                    <Input
-                      type="text"
-                      value={profileForm.lastName}
-                      onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                    <label className="text-sm font-medium text-white mb-2 block">Bio</label>
+                    <Textarea
+                      placeholder="Uma breve descrição sobre você..."
+                      value={profileForm.bio}
+                      onChange={(e) => setProfileForm({ ...profileForm, bio: e.target.value })}
                       className={inputClasses}
+                      rows={3}
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-white mb-2 block">Email</label>
-                  <Input
-                    type="email"
-                    value={profileForm.email}
-                    onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))}
-                    className={inputClasses}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-white mb-2 block">Bio</label>
-                  <Textarea
-                    value={profileForm.bio}
-                    onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))}
-                    className={inputClasses}
-                    rows={3}
-                    placeholder="Conte um pouco sobre você..."
-                  />
-                </div>
-
-                <div className="border-t border-gray-700 pt-4">
-                  <h3 className="text-white font-medium mb-3">Alterar Senha</h3>
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-sm font-medium text-white mb-2 block">Senha Atual</label>
-                      <div className="relative">
-                        <Input
-                          type={showCurrentPassword ? "text" : "password"}
-                          value={profileForm.currentPassword}
-                          onChange={(e) => setProfileForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
-                          className={inputClasses}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                        >
-                          {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-white mb-2 block">Nova Senha</label>
-                      <div className="relative">
-                        <Input
-                          type={showNewPassword ? "text" : "password"}
-                          value={profileForm.newPassword}
-                          onChange={(e) => setProfileForm((prev) => ({ ...prev, newPassword: e.target.value }))}
-                          className={inputClasses}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowNewPassword(!showNewPassword)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                        >
-                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-white mb-2 block">Confirmar Nova Senha</label>
-                      <div className="relative">
-                        <Input
-                          type={showConfirmPassword ? "text" : "password"}
-                          value={profileForm.confirmNewPassword}
-                          onChange={(e) => setProfileForm((prev) => ({ ...prev, confirmNewPassword: e.target.value }))}
-                          className={inputClasses}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                        >
-                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </Button>
-                      </div>
+                  <div>
+                    <label className="text-sm font-medium text-white mb-2 block">Senha Atual</label>
+                    <div className="relative">
+                      <Input
+                        type={showCurrentPassword ? "text" : "password"}
+                        placeholder="Senha Atual"
+                        value={profileForm.currentPassword}
+                        onChange={(e) => setProfileForm({ ...profileForm, currentPassword: e.target.value })}
+                        className={inputClasses}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                      >
+                        {showCurrentPassword ? "Ocultar" : "Mostrar"}
+                      </Button>
                     </div>
                   </div>
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowProfileDialog(false)}
-                    className="flex-1 bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={loginLoading}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-                  </Button>
-                </div>
-              </form>
+                  <div>
+                    <label className="text-sm font-medium text-white mb-2 block">Nova Senha</label>
+                    <div className="relative">
+                      <Input
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="Nova Senha"
+                        value={profileForm.newPassword}
+                        onChange={(e) => setProfileForm({ ...profileForm, newPassword: e.target.value })}
+                        className={inputClasses}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                      >
+                        {showNewPassword ? "Ocultar" : "Mostrar"}
+                      </Button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-white mb-2 block">Confirmar Nova Senha</label>
+                    <div className="relative">
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirmar Nova Senha"
+                        value={profileForm.confirmNewPassword}
+                        onChange={(e) => setProfileForm({ ...profileForm, confirmNewPassword: e.target.value })}
+                        className={inputClasses}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                      >
+                        {showConfirmPassword ? "Ocultar" : "Mostrar"}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2"
+                      disabled={loginLoading}
+                    >
+                      {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+                    </Button>
+                  </div>
+                </form>
+              )}
             </DialogContent>
           </Dialog>
         </div>

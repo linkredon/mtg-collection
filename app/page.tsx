@@ -149,7 +149,7 @@ const cardTypes = [
   { value: "planeswalker", label: "Planeswalkers" },
 ]
 
-function MTGCollectionManager() {
+export default function MTGCollectionManager() {
   const [allCards, setAllCards] = useState<MTGCard[]>([])
   const [deckBuilderCards, setDeckBuilderCards] = useState<MTGCard[]>([])
   const [ownedCardsMap, setOwnedCardsMap] = useState<Map<string, OwnedCard>>(new Map())
@@ -212,9 +212,6 @@ function MTGCollectionManager() {
   })
   const [isRegistering, setIsRegistering] = useState(false)
   const [loginLoading, setLoginLoading] = useState(false)
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
-  const [showNewPassword, setShowNewPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   // Deck Builder States
   const [currentDeck, setCurrentDeck] = useState<SavedDeck>({
@@ -273,7 +270,35 @@ function MTGCollectionManager() {
       .toLowerCase()
   }
 
-  // Função para simular preço baseado na raridade e tipo
+  // Função para buscar preço no Liga Magic
+  const fetchLigaMagicPrice = async (cardName: string): Promise<number | null> => {
+    try {
+      // Normalizar nome da carta para busca
+      const searchName = cardName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '+')
+      
+      // Simular busca no Liga Magic (em produção, seria uma API real)
+      // Por enquanto, vamos retornar null para usar o fallback
+      const response = await fetch(`https://api.ligamagic.com.br/search?q=${searchName}`, {
+        headers: {
+          'User-Agent': 'MTGCollectionManager/1.0'
+        }
+      }).catch(() => null)
+      
+      if (response && response.ok) {
+        const data = await response.json()
+        if (data.price) {
+          return data.price
+        }
+      }
+      
+      return null
+    } catch (error) {
+      console.error('Erro ao buscar preço no Liga Magic:', error)
+      return null
+    }
+  }
+
+  // Função para simular preço baseado na raridade e tipo (synchronous)
   const getEstimatedPrice = (card: MTGCard): number => {
     const basePrice = {
       common: 0.5,
@@ -642,32 +667,6 @@ function MTGCollectionManager() {
           return deckCard
         })
         .filter(Boolean) as DeckCard[]
-
-      return {
-        ...prev,
-        [isSideboard ? "sideboard" : "mainboard"]: newArray,
-        updatedAt: new Date().toISOString(),
-      }
-    })
-  }
-
-  const setCardQuantity = (cardId: string, quantity: number, isSideboard = false) => {
-    setCurrentDeck((prev) => {
-      const targetArray = isSideboard ? prev.sideboard : prev.mainboard
-      let newArray
-
-      if (quantity <= 0) {
-        newArray = targetArray.filter((deckCard) => deckCard.card.id !== cardId)
-      } else {
-        const existingIndex = targetArray.findIndex((deckCard) => deckCard.card.id === cardId)
-        if (existingIndex >= 0) {
-          newArray = [...targetArray]
-          newArray[existingIndex] = { ...newArray[existingIndex], quantity }
-        } else {
-          // Se não existe, não adiciona (só modifica existentes)
-          newArray = targetArray
-        }
-      }
 
       return {
         ...prev,
@@ -1105,70 +1104,6 @@ function MTGCollectionManager() {
       setLoading(false)
     }
   }
-
-  // Adicionar função de login social
-  const handleSocialLogin = async (provider: "google" | "facebook" | "github") => {
-    setLoginLoading(true)
-
-    try {
-      // Simular autenticação social
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      const socialUser = {
-        id: `${provider}_${Date.now()}`,
-        name:
-          provider === "google" ? "Usuário Google" : provider === "facebook" ? "Usuário Facebook" : "Usuário GitHub",
-        email: `usuario@${provider}.com`,
-        firstName: "Usuário",
-        lastName: provider.charAt(0).toUpperCase() + provider.slice(1),
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${provider}`,
-        bio: `Conectado via ${provider.charAt(0).toUpperCase() + provider.slice(1)}`,
-      }
-
-      setCurrentUser(socialUser)
-      localStorage.setItem("mtg-user", JSON.stringify(socialUser))
-      setIsAuthenticated(true)
-      setShowLoginDialog(false)
-      console.log(`Login via ${provider} realizado com sucesso!`)
-    } catch (error) {
-      console.error(`Erro no login via ${provider}:`, error)
-      alert(`Erro no login via ${provider}. Tente novamente.`)
-    } finally {
-      setLoginLoading(false)
-    }
-  }
-
-  // Adicionar ao final do arquivo, antes do return
-  const customScrollbarStyles = `
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(55, 65, 81, 0.3);
-    border-radius: 4px;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(156, 163, 175, 0.5);
-    border-radius: 4px;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(156, 163, 175, 0.7);
-  }
-`
-
-  // Adicionar o estilo no head
-  useEffect(() => {
-    const style = document.createElement("style")
-    style.textContent = customScrollbarStyles
-    document.head.appendChild(style)
-
-    return () => {
-      document.head.removeChild(style)
-    }
-  }, [])
 
   // Load saved background from localStorage and fetch new one if needed
   useEffect(() => {
@@ -2704,67 +2639,71 @@ function MTGCollectionManager() {
                           ) : (
                             // Grid View
                             <div className="grid grid-cols-3 gap-2">
-                              {visibleCards.map((card) => {
-                                const quantityInCollection = getCardQuantityInCollection(card.id, false)
-                                const quantityInCollectionFoil = getCardQuantityInCollection(card.id, true)
+  {visibleCards.map((card) => {
+    const quantityInCollection = getCardQuantityInCollection(card.id, false)
+    const quantityInCollectionFoil = getCardQuantityInCollection(card.id, true)
 
-                                return (
-                                  <div
-                                    key={card.id}
-                                    className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
-                                  >
-                                    <div className="relative">
-                                      <img
-                                        src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
-                                        alt={card.name}
-                                        className="w-full h-auto rounded-lg shadow-lg"
-                                        loading="lazy"
-                                        onClick={() => setSelectedCard(card)}
-                                      />
-                                      {(quantityInCollection > 0 || quantityInCollectionFoil > 0) && (
-                                        <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1">
-                                          <CheckCircle className="w-4 h-4" />
-                                        </div>
-                                      )}
-                                      {quantityInCollection > 0 && (
-                                        <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
-                                          {quantityInCollection}
-                                        </div>
-                                      )}
-                                      {quantityInCollectionFoil > 0 && (
-                                        <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold">
-                                          F{quantityInCollectionFoil}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2">
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            addCardToCollection(card, 1, "Near Mint", false)
-                                          }}
-                                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                        >
-                                          <Plus className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            addCardToCollection(card, 1, "Near Mint", true)
-                                          }}
-                                          className="bg-yellow-600 hover:bg-yellow-700 text-white"
-                                        >
-                                          <Plus className="w-4 h-4" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
+    return (
+      <div
+        key={card.id}
+        className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+      >
+        <div className="relative">
+          <img
+            src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
+            alt={card.name}
+            className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+            loading="lazy"
+            onClick={() => setSelectedCard(card)}
+          />
+          {(quantityInCollection > 0 || quantityInCollectionFoil > 0) && (
+            <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1 pointer-events-none">
+              <CheckCircle className="w-4 h-4" />
+            </div>
+          )}
+          {quantityInCollection > 0 && (
+            <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+              {quantityInCollection}
+            </div>
+          )}
+          {quantityInCollectionFoil > 0 && (
+            <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+              F{quantityInCollectionFoil}
+            </div>
+          )}
+        </div>
+        
+        {/* Área dos botões - apenas no canto inferior direito */}
+        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="flex flex-col gap-1">
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                addCardToCollection(card, 1, "Near Mint", false)
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+              title="Adicionar Normal"
+            >
+              <Plus className="w-3 h-3" />
+            </Button>
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                addCardToCollection(card, 1, "Near Mint", true)
+              }}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white p-1 h-6 w-6"
+              title="Adicionar Foil"
+            >
+              <Plus className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  })}
+</div>
                           )}
 
                           {/* Load More Button */}
@@ -2854,8 +2793,7 @@ function MTGCollectionManager() {
                                         {collectionCard.card.set_name} • {collectionCard.condition}
                                       </p>
                                       <p className="text-gray-500 text-xs">
-                                        R${" "}
-                                        {(getEstimatedPrice(collectionCard.card) * collectionCard.quantity).toFixed(2)}
+                                        R$ {(getEstimatedPrice(collectionCard.card) * collectionCard.quantity).toFixed(2)}
                                       </p>
                                     </div>
                                     <div className="flex items-center gap-1">
@@ -2906,65 +2844,69 @@ function MTGCollectionManager() {
                           ) : (
                             // Grid View
                             <div className={`grid grid-cols-${currentColumns} gap-2`}>
-                              {currentCollection.cards
-                                .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
-                                .map((collectionCard) => (
-                                  <div
-                                    key={`${collectionCard.card.id}-${collectionCard.foil}`}
-                                    className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
-                                  >
-                                    <div className="relative">
-                                      <img
-                                        src={getOptimizedImageUrl(collectionCard.card, true) || "/placeholder.svg"}
-                                        alt={collectionCard.card.name}
-                                        className="w-full h-auto rounded-lg shadow-lg"
-                                        loading="lazy"
-                                        onClick={() => setSelectedCard(collectionCard.card)}
-                                      />
-                                      <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1">
-                                        <CheckCircle className="w-4 h-4" />
-                                      </div>
-                                      <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
-                                        {collectionCard.quantity}
-                                      </div>
-                                      {collectionCard.foil && (
-                                        <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold">
-                                          FOIL
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2">
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            addCardToCollection(
-                                              collectionCard.card,
-                                              1,
-                                              collectionCard.condition,
-                                              collectionCard.foil,
-                                            )
-                                          }}
-                                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                        >
-                                          <Plus className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
-                                          }}
-                                          className="bg-red-600 hover:bg-red-700 text-white"
-                                        >
-                                          <Minus className="w-4 h-4" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                            </div>
+  {currentCollection.cards
+    .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+    .map((collectionCard) => (
+      <div
+        key={`${collectionCard.card.id}-${collectionCard.foil}`}
+        className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+      >
+        <div className="relative">
+          <img
+            src={getOptimizedImageUrl(collectionCard.card, true) || "/placeholder.svg"}
+            alt={collectionCard.card.name}
+            className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+            loading="lazy"
+            onClick={() => setSelectedCard(collectionCard.card)}
+          />
+          <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1 pointer-events-none">
+            <CheckCircle className="w-4 h-4" />
+          </div>
+          <div className="absolute top-2 left-2 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+            {collectionCard.quantity}
+          </div>
+          {collectionCard.foil && (
+            <div className="absolute bottom-2 left-2 bg-yellow-600 text-white rounded-full px-2 py-1 text-xs font-bold pointer-events-none">
+              FOIL
+            </div>
+          )}
+        </div>
+        
+        {/* Área dos botões - apenas no canto inferior direito */}
+        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="flex flex-col gap-1">
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                addCardToCollection(
+                  collectionCard.card,
+                  1,
+                  collectionCard.condition,
+                  collectionCard.foil,
+                )
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+              title="Adicionar"
+            >
+              <Plus className="w-3 h-3" />
+            </Button>
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white p-1 h-6 w-6"
+              title="Remover"
+            >
+              <Minus className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    ))}
+</div>
                           )}
                         </div>
                       ) : (
@@ -3095,7 +3037,7 @@ function MTGCollectionManager() {
               )}
             </TabsContent>
 
-            {/* Deck Builder Tab - Novo Layout de Duas Colunas */}
+            {/* Deck Builder Tab */}
             <TabsContent value="deckbuilder" className="space-y-6">
               {/* Deck Header */}
               <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
@@ -3172,7 +3114,6 @@ function MTGCollectionManager() {
                         Novo
                       </Button>
 
-                      {/* Botões de salvar, carregar, importar, exportar - mantidos iguais */}
                       <Dialog open={showDeckSaveDialog} onOpenChange={setShowDeckSaveDialog}>
                         <DialogTrigger asChild>
                           <Button
@@ -3248,9 +3189,9 @@ function MTGCollectionManager() {
                                     <div className="flex-1">
                                       <h3 className="text-white font-medium mb-1">{deck.name}</h3>
                                       <p className="text-sm text-gray-400 mb-2">
-                                        <strong>Formato:</strong> {deck.format?.toUpperCase()} •{" "}
-                                        <strong>Cartas:</strong>{" "}
-                                        {deck.mainboard.reduce((sum, card) => sum + card.quantity, 0)}
+                                        <strong>Formato:</strong> {deck.format.toUpperCase()} • <strong>Cartas:</strong>{" "}
+                                        {deck.mainboard.reduce((sum, card) => sum + card.quantity, 0)} •{" "}
+                                        <strong>Criado:</strong> {new Date(deck.createdAt).toLocaleDateString("pt-BR")}
                                       </p>
                                       {deck.description && <p className="text-xs text-gray-500">{deck.description}</p>}
                                     </div>
@@ -3296,20 +3237,29 @@ function MTGCollectionManager() {
                           </DialogHeader>
                           <div className="space-y-4">
                             <div>
-                              <label className="text-sm font-medium text-white mb-2 block">Cole a lista do deck</label>
+                              <label className="text-sm font-medium text-white mb-2 block">
+                                Cole sua lista de deck aqui:
+                              </label>
                               <Textarea
+                                placeholder={`Exemplo:
+4 Lightning Bolt
+2 Counterspell
+1 Black Lotus
+
+// Sideboard
+3 Negate
+2 Dispel`}
                                 value={deckImportText}
                                 onChange={(e) => setDeckImportText(e.target.value)}
                                 className={inputClasses}
                                 rows={10}
-                                placeholder={`4 Lightning Bolt
-2 Counterspell
-1 Black Lotus
-
-Sideboard:
-3 Pyroblast
-2 Red Elemental Blast`}
                               />
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              <p>
+                                <strong>Formato aceito:</strong> Quantidade Nome da Carta (ex: "4 Lightning Bolt")
+                              </p>
+                              <p>Use "// Sideboard" ou "Sideboard:" para separar o sideboard</p>
                             </div>
                             <div className="flex gap-2 justify-end">
                               <Button
@@ -3335,11 +3285,12 @@ Sideboard:
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          const text = exportDeckToText()
-                          navigator.clipboard.writeText(text)
-                          console.log("Lista do deck copiada!")
+                          const deckText = exportDeckToText()
+                          navigator.clipboard.writeText(deckText)
+                          alert("Lista do deck copiada para a área de transferência!")
                         }}
                         className="bg-orange-600 border-orange-500 text-white hover:bg-orange-700"
+                        disabled={currentDeck.mainboard.length === 0}
                       >
                         <Download className="w-4 h-4 mr-2" />
                         Exportar
@@ -3349,19 +3300,20 @@ Sideboard:
                 </CardContent>
               </Card>
 
-              {/* Search and Filters for Deck Builder */}
+              {/* Deck Search */}
               <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                 <CardContent className="p-4">
-                  <div className="flex flex-wrap gap-4 items-center justify-center">
+                  <div className="flex flex-wrap gap-4 items-center">
                     <div className="flex-1 min-w-48">
                       <Input
-                        placeholder="Buscar cartas para o deck..."
+                        placeholder="Buscar cartas para adicionar ao deck..."
                         value={deckSearchQuery}
                         onChange={(e) => setDeckSearchQuery(e.target.value)}
                         className={inputClasses}
                       />
                     </div>
 
+                    {/* Filtros básicos para deck builder */}
                     <Select value={rarityFilter} onValueChange={setRarityFilter}>
                       <SelectTrigger className={`w-32 ${selectClasses}`}>
                         <SelectValue placeholder="Raridade" />
@@ -3389,7 +3341,7 @@ Sideboard:
                       placeholder="CMC"
                       value={cmcFilter}
                       onChange={(e) => setCmcFilter(e.target.value)}
-                      className={`${inputClasses} w-20`}
+                      className={`w-20 ${inputClasses}`}
                     />
                   </div>
 
@@ -3421,43 +3373,53 @@ Sideboard:
                 </CardContent>
               </Card>
 
-              {/* Two Column Layout for Deck Builder */}
+              {/* Loading State for Deck Builder */}
+              {isSearchingCards && (
+                <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
+                  <CardContent className="p-8 text-center">
+                    <div className="flex flex-col items-center gap-4">
+                      <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+                      <p className="text-white text-lg">{loadingMessage}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Three Column Layout for Deck Builder */}
               {!isSearchingCards && deckBuilderCards.length > 0 && (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  {/* Left Column - All Cards for Deck Building */}
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                  {/* Left Column - Available Cards */}
                   <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
-                        <CardTitle className="text-white text-xl">
-                          Banco de Cartas ({filteredDeckCards.length})
+                        <CardTitle className="text-white text-lg">
+                          Cartas Disponíveis ({filteredDeckCards.length})
                         </CardTitle>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setTextView(!textView)}
-                            className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                          >
-                            {textView ? <Grid3X3 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-                          </Button>
-                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTextView(!textView)}
+                          className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+                        >
+                          {textView ? <Grid3X3 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                        </Button>
                       </div>
                     </CardHeader>
-                    <CardContent className="max-h-[800px] overflow-y-auto custom-scrollbar">
+                    <CardContent className="max-h-[600px] overflow-y-auto">
                       {filteredDeckCards.length > 0 ? (
-                        <div className="space-y-4">
+                        <div className="space-y-2">
                           {textView ? (
-                            // Text View for Deck Builder
+                            // Lista View (atual)
                             <div className="space-y-2">
                               {visibleDeckCards.map((card) => (
                                 <div
                                   key={card.id}
-                                  className="flex items-center gap-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
-                                >
+                                  className="flex items-center gap-3 p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
+                                  >
                                   <img
                                     src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
                                     alt={card.name}
-                                    className="w-12 h-16 rounded object-cover cursor-pointer"
+                                    className="w-10 h-14 rounded object-cover cursor-pointer"
                                     onClick={() => setSelectedCard(card)}
                                   />
                                   <div className="flex-1 min-w-0">
@@ -3484,20 +3446,20 @@ Sideboard:
                                     </div>
                                     <p className="text-gray-400 text-xs truncate">{card.set_name}</p>
                                   </div>
-                                  <div className="flex flex-col gap-1">
+                                  <div className="flex gap-1">
                                     <Button
                                       size="sm"
                                       onClick={() => addCardToDeck(card, 1, false)}
-                                      className="w-8 h-6 p-0 bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                                      title="Adicionar ao Mainboard"
+                                      className="w-6 h-6 p-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                                      title="Adicionar ao deck principal"
                                     >
                                       <Plus className="w-3 h-3" />
                                     </Button>
                                     <Button
                                       size="sm"
                                       onClick={() => addCardToDeck(card, 1, true)}
-                                      className="w-8 h-6 p-0 bg-purple-600 hover:bg-purple-700 text-white text-xs"
-                                      title="Adicionar ao Sideboard"
+                                      className="w-6 h-6 p-0 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                                      title="Adicionar ao sideboard"
                                     >
                                       <Plus className="w-3 h-3" />
                                     </Button>
@@ -3506,8 +3468,8 @@ Sideboard:
                               ))}
                             </div>
                           ) : (
-                            // Grid View for Deck Builder
-                            <div className="grid grid-cols-3 gap-2">
+                            // Grid View (novo)
+                            <div className="grid grid-cols-2 gap-2">
                               {visibleDeckCards.map((card) => (
                                 <div
                                   key={card.id}
@@ -3517,23 +3479,52 @@ Sideboard:
                                     <img
                                       src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
                                       alt={card.name}
-                                      className="w-full h-auto rounded-lg shadow-lg"
+                                      className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
                                       loading="lazy"
-                                      onClick={() => setSelectedCard(card)}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedCard(card)
+                                      }}
                                     />
+                                    {/* Overlay com informações da carta */}
+                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-lg">
+                                      <p className="text-white text-xs font-medium truncate">{card.name}</p>
+                                      <div className="flex items-center justify-between">
+                                        <span
+                                          className="text-xs"
+                                          dangerouslySetInnerHTML={{ __html: formatManaSymbols(card.mana_cost || "") }}
+                                        />
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${
+                                            card.rarity === "mythic"
+                                              ? "border-orange-500 text-orange-400"
+                                              : card.rarity === "rare"
+                                                ? "border-yellow-500 text-yellow-400"
+                                                : card.rarity === "uncommon"
+                                                  ? "border-gray-400 text-gray-300"
+                                                  : "border-gray-600 text-gray-400"
+                                          }`}
+                                        >
+                                          {card.rarity.charAt(0).toUpperCase()}
+                                        </Badge>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2">
+                                  
+                                  {/* Área dos botões - apenas no canto inferior direito */}
+                                  <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                    <div className="flex flex-col gap-1">
                                       <Button
                                         size="sm"
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           addCardToDeck(card, 1, false)
                                         }}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white"
-                                        title="Mainboard"
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+                                        title="Adicionar ao deck principal"
                                       >
-                                        <Plus className="w-4 h-4" />
+                                        <Plus className="w-3 h-3" />
                                       </Button>
                                       <Button
                                         size="sm"
@@ -3541,10 +3532,10 @@ Sideboard:
                                           e.stopPropagation()
                                           addCardToDeck(card, 1, true)
                                         }}
-                                        className="bg-purple-600 hover:bg-purple-700 text-white"
-                                        title="Sideboard"
+                                        className="bg-blue-600 hover:bg-blue-700 text-white p-1 h-6 w-6"
+                                        title="Adicionar ao sideboard"
                                       >
-                                        <Plus className="w-4 h-4" />
+                                        <Plus className="w-3 h-3" />
                                       </Button>
                                     </div>
                                   </div>
@@ -3567,22 +3558,20 @@ Sideboard:
                         </div>
                       ) : (
                         <div className="text-center py-8">
-                          <p className="text-gray-400 text-lg">Nenhuma carta encontrada com os filtros atuais.</p>
+                          <p className="text-gray-400">Nenhuma carta encontrada.</p>
                         </div>
                       )}
                     </CardContent>
                   </Card>
 
-                  {/* Right Column - Current Deck */}
+                  {/* Middle Column - Mainboard */}
                   <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
-                        <CardTitle className="text-white text-xl">
-                          Deck Atual ({currentDeck.mainboard.length + currentDeck.sideboard.length})
-                        </CardTitle>
+                        <CardTitle className="text-white text-lg">Deck Principal ({deckStats.totalCards})</CardTitle>
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="border-blue-500 text-blue-400">
-                            {deckStats.totalCards} cartas
+                          <Badge variant="outline" className="border-emerald-500 text-emerald-400">
+                            {currentDeck.format === "commander" ? "99 cartas" : "60 cartas"}
                           </Badge>
                           <Button
                             variant="outline"
@@ -3595,249 +3584,292 @@ Sideboard:
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent className="max-h-[800px] overflow-y-auto custom-scrollbar">
-                      {currentDeck.mainboard.length > 0 || currentDeck.sideboard.length > 0 ? (
-                        <div className="space-y-6">
-                          {/* Mainboard */}
-                          {currentDeck.mainboard.length > 0 && (
-                            <div>
-                              <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                                <span className="w-3 h-3 bg-blue-600 rounded-full"></span>
-                                Mainboard ({currentDeck.mainboard.reduce((sum, card) => sum + card.quantity, 0)})
-                              </h3>
-                              {textView ? (
-                                <div className="space-y-2">
-                                  {currentDeck.mainboard.map((deckCard) => (
-                                    <div
-                                      key={deckCard.card.id}
-                                      className="flex items-center gap-3 p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
-                                    >
-                                      <img
-                                        src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
-                                        alt={deckCard.card.name}
-                                        className="w-10 h-14 rounded object-cover cursor-pointer"
-                                        onClick={() => setSelectedCard(deckCard.card)}
-                                      />
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
-                                        <div className="flex items-center gap-2">
-                                          <span
-                                            className="text-xs"
-                                            dangerouslySetInnerHTML={{
-                                              __html: formatManaSymbols(deckCard.card.mana_cost || ""),
-                                            }}
-                                          />
-                                          <Badge
-                                            variant="outline"
-                                            className={`text-xs ${
-                                              deckCard.card.rarity === "mythic"
-                                                ? "border-orange-500 text-orange-400"
-                                                : deckCard.card.rarity === "rare"
-                                                  ? "border-yellow-500 text-yellow-400"
-                                                  : deckCard.card.rarity === "uncommon"
-                                                    ? "border-gray-400 text-gray-300"
-                                                    : "border-gray-600 text-gray-400"
-                                            }`}
-                                          >
-                                            {deckCard.card.rarity.charAt(0).toUpperCase()}
-                                          </Badge>
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <Button
-                                          size="sm"
-                                          onClick={() => removeCardFromDeck(deckCard.card.id, 1, false)}
-                                          className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
-                                        >
-                                          <Minus className="w-3 h-3" />
-                                        </Button>
-                                        <span className="text-white text-sm font-medium w-6 text-center">
-                                          {deckCard.quantity}
-                                        </span>
-                                        <Button
-                                          size="sm"
-                                          onClick={() => addCardToDeck(deckCard.card, 1, false)}
-                                          className="w-6 h-6 p-0 bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                                        >
-                                          <Plus className="w-3 h-3" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="grid grid-cols-4 gap-2">
-                                  {currentDeck.mainboard.map((deckCard) => (
-                                    <div
-                                      key={deckCard.card.id}
-                                      className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
-                                    >
-                                      <div className="relative">
-                                        <img
-                                          src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
-                                          alt={deckCard.card.name}
-                                          className="w-full h-auto rounded-lg shadow-lg"
-                                          loading="lazy"
-                                          onClick={() => setSelectedCard(deckCard.card)}
+                    <CardContent className="max-h-[600px] overflow-y-auto">
+                      {currentDeck.mainboard.length > 0 ? (
+                        <div className="space-y-2">
+                          {textView ? (
+                            // Lista View
+                            <div className="space-y-2">
+                              {currentDeck.mainboard
+                                .sort((a, b) => a.card.name.localeCompare(b.card.name))
+                                .map((deckCard) => (
+                                  <div
+                                    key={deckCard.card.id}
+                                    className="flex items-center gap-3 p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
+                                  >
+                                    <img
+                                      src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
+                                      alt={deckCard.card.name}
+                                      className="w-10 h-14 rounded object-cover cursor-pointer"
+                                      onClick={() => setSelectedCard(deckCard.card)}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className="text-xs"
+                                          dangerouslySetInnerHTML={{
+                                            __html: formatManaSymbols(deckCard.card.mana_cost || ""),
+                                          }}
                                         />
-                                        <div className="absolute top-1 left-1 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
-                                          {deckCard.quantity}
-                                        </div>
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${
+                                            deckCard.card.rarity === "mythic"
+                                              ? "border-orange-500 text-orange-400"
+                                              : deckCard.card.rarity === "rare"
+                                                ? "border-yellow-500 text-yellow-400"
+                                                : deckCard.card.rarity === "uncommon"
+                                                  ? "border-gray-400 text-gray-300"
+                                                  : "border-gray-600 text-gray-400"
+                                          }`}
+                                        >
+                                          {deckCard.card.rarity.charAt(0).toUpperCase()}
+                                        </Badge>
                                       </div>
-                                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-1">
-                                          <Button
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              removeCardFromDeck(deckCard.card.id, 1, false)
-                                            }}
-                                            className="bg-red-600 hover:bg-red-700 text-white p-1"
-                                          >
-                                            <Minus className="w-3 h-3" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              addCardToDeck(deckCard.card, 1, false)
-                                            }}
-                                            className="bg-blue-600 hover:bg-blue-700 text-white p-1"
-                                          >
-                                            <Plus className="w-3 h-3" />
-                                          </Button>
-                                        </div>
-                                      </div>
+                                      <p className="text-gray-400 text-xs truncate">{deckCard.card.set_name}</p>
                                     </div>
-                                  ))}
-                                </div>
-                              )}
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        size="sm"
+                                        onClick={() => removeCardFromDeck(deckCard.card.id, 1, false)}
+                                        className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </Button>
+                                      <span className="text-white text-sm font-medium w-6 text-center">
+                                        {deckCard.quantity}
+                                      </span>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => addCardToDeck(deckCard.card, 1, false)}
+                                        className="w-6 h-6 p-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
                             </div>
-                          )}
-
-                          {/* Sideboard */}
-                          {currentDeck.sideboard.length > 0 && (
-                            <div>
-                              <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                                <span className="w-3 h-3 bg-purple-600 rounded-full"></span>
-                                Sideboard ({currentDeck.sideboard.reduce((sum, card) => sum + card.quantity, 0)})
-                              </h3>
-                              {textView ? (
-                                <div className="space-y-2">
-                                  {currentDeck.sideboard.map((deckCard) => (
-                                    <div
-                                      key={deckCard.card.id}
-                                      className="flex items-center gap-3 p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
-                                    >
+                          ) : (
+                            // Grid View
+                            <div className="grid grid-cols-3 gap-2">
+                              {currentDeck.mainboard
+                                .sort((a, b) => a.card.name.localeCompare(b.card.name))
+                                .map((deckCard) => (
+                                  <div
+                                    key={deckCard.card.id}
+                                    className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                  >
+                                    <div className="relative">
                                       <img
                                         src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
                                         alt={deckCard.card.name}
-                                        className="w-10 h-14 rounded object-cover cursor-pointer"
-                                        onClick={() => setSelectedCard(deckCard.card)}
+                                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+                                        loading="lazy"
+                                        onClick={(e) => setSelectedCard(deckCard.card)}
                                       />
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
-                                        <div className="flex items-center gap-2">
-                                          <span
-                                            className="text-xs"
-                                            dangerouslySetInnerHTML={{
-                                              __html: formatManaSymbols(deckCard.card.mana_cost || ""),
-                                            }}
-                                          />
-                                          <Badge
-                                            variant="outline"
-                                            className={`text-xs ${
-                                              deckCard.card.rarity === "mythic"
-                                                ? "border-orange-500 text-orange-400"
-                                                : deckCard.card.rarity === "rare"
-                                                  ? "border-yellow-500 text-yellow-400"
-                                                  : deckCard.card.rarity === "uncommon"
-                                                    ? "border-gray-400 text-gray-300"
-                                                    : "border-gray-600 text-gray-400"
-                                            }`}
-                                          >
-                                            {deckCard.card.rarity.charAt(0).toUpperCase()}
-                                          </Badge>
-                                        </div>
+                                      <div className="absolute top-1 left-1 bg-emerald-600 text-white rounded-full px-2 py-1 text-xs font-bold">
+                                        {deckCard.quantity}
                                       </div>
-                                      <div className="flex items-center gap-1">
+                                      {/* Overlay com nome da carta */}
+                                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1 rounded-b-lg">
+                                        <p className="text-white text-xs font-medium truncate">{deckCard.card.name}</p>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Área dos botões - apenas no canto inferior direito */}
+                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                      <div className="flex flex-col gap-1">
                                         <Button
                                           size="sm"
-                                          onClick={() => removeCardFromDeck(deckCard.card.id, 1, true)}
-                                          className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
-                                        >
-                                          <Minus className="w-3 h-3" />
-                                        </Button>
-                                        <span className="text-white text-sm font-medium w-6 text-center">
-                                          {deckCard.quantity}
-                                        </span>
-                                        <Button
-                                          size="sm"
-                                          onClick={() => addCardToDeck(deckCard.card, 1, true)}
-                                          className="w-6 h-6 p-0 bg-purple-600 hover:bg-purple-700 text-white text-xs"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            addCardToDeck(deckCard.card, 1, false)
+                                          }}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+                                          title="Adicionar"
                                         >
                                           <Plus className="w-3 h-3" />
                                         </Button>
+                                        <Button
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            removeCardFromDeck(deckCard.card.id, 1, false)
+                                          }}
+                                          className="bg-red-600 hover:bg-red-700 text-white p-1 h-6 w-6"
+                                          title="Remover"
+                                        >
+                                          <Minus className="w-3 h-3" />
+                                        </Button>
                                       </div>
                                     </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="grid grid-cols-4 gap-2">
-                                  {currentDeck.sideboard.map((deckCard) => (
-                                    <div
-                                      key={deckCard.card.id}
-                                      className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
-                                    >
-                                      <div className="relative">
-                                        <img
-                                          src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
-                                          alt={deckCard.card.name}
-                                          className="w-full h-auto rounded-lg shadow-lg"
-                                          loading="lazy"
-                                          onClick={() => setSelectedCard(deckCard.card)}
-                                        />
-                                        <div className="absolute top-1 left-1 bg-purple-600 text-white rounded-full px-2 py-1 text-xs font-bold">
-                                          {deckCard.quantity}
-                                        </div>
-                                      </div>
-                                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-1">
-                                          <Button
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              removeCardFromDeck(deckCard.card.id, 1, true)
-                                            }}
-                                            className="bg-red-600 hover:bg-red-700 text-white p-1"
-                                          >
-                                            <Minus className="w-3 h-3" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              addCardToDeck(deckCard.card, 1, true)
-                                            }}
-                                            className="bg-purple-600 hover:bg-purple-700 text-white p-1"
-                                          >
-                                            <Plus className="w-3 h-3" />
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                  </div>
+                                ))}
                             </div>
                           )}
                         </div>
                       ) : (
                         <div className="text-center py-8">
-                          <p className="text-gray-400 text-lg mb-2">Seu deck está vazio</p>
+                          <p className="text-gray-400 text-lg mb-2">Deck principal vazio</p>
                           <p className="text-gray-500 text-sm">
-                            Use os botões <Plus className="w-4 h-4 inline mx-1" /> na coluna da esquerda para adicionar
-                            cartas
+                            Use os botões <Plus className="w-4 h-4 inline mx-1" /> verdes para adicionar cartas
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Right Column - Sideboard */}
+                  <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-white text-lg">Sideboard ({deckStats.sideboardCards})</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="border-blue-500 text-blue-400">
+                            15 cartas
+                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setTextView(!textView)}
+                            className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+                          >
+                            {textView ? <Grid3X3 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="max-h-[600px] overflow-y-auto">
+                      {currentDeck.sideboard.length > 0 ? (
+                        <div className="space-y-2">
+                          {textView ? (
+                            // Lista View
+                            <div className="space-y-2">
+                              {currentDeck.sideboard
+                                .sort((a, b) => a.card.name.localeCompare(b.card.name))
+                                .map((deckCard) => (
+                                  <div
+                                    key={deckCard.card.id}
+                                    className="flex items-center gap-3 p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
+                                  >
+                                    <img
+                                      src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
+                                      alt={deckCard.card.name}
+                                      className="w-10 h-14 rounded object-cover cursor-pointer"
+                                      onClick={() => setSelectedCard(deckCard.card)}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-white text-sm font-medium truncate">{deckCard.card.name}</p>
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className="text-xs"
+                                          dangerouslySetInnerHTML={{
+                                            __html: formatManaSymbols(deckCard.card.mana_cost || ""),
+                                          }}
+                                        />
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${
+                                            deckCard.card.rarity === "mythic"
+                                              ? "border-orange-500 text-orange-400"
+                                              : deckCard.card.rarity === "rare"
+                                                ? "border-yellow-500 text-yellow-400"
+                                                : deckCard.card.rarity === "uncommon"
+                                                  ? "border-gray-400 text-gray-300"
+                                                  : "border-gray-600 text-gray-400"
+                                          }`}
+                                        >
+                                          {deckCard.card.rarity.charAt(0).toUpperCase()}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-gray-400 text-xs truncate">{deckCard.card.set_name}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        size="sm"
+                                        onClick={() => removeCardFromDeck(deckCard.card.id, 1, true)}
+                                        className="w-6 h-6 p-0 bg-red-600 hover:bg-red-700 text-white text-xs"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </Button>
+                                      <span className="text-white text-sm font-medium w-6 text-center">
+                                        {deckCard.quantity}
+                                      </span>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => addCardToDeck(deckCard.card, 1, true)}
+                                        className="w-6 h-6 p-0 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          ) : (
+                            // Grid View
+                            <div className="grid grid-cols-3 gap-2">
+                              {currentDeck.sideboard
+                                .sort((a, b) => a.card.name.localeCompare(b.card.name))
+                                .map((deckCard) => (
+                                  <div
+                                    key={deckCard.card.id}
+                                    className="relative group cursor-pointer transform transition-all duration-200 hover:scale-105"
+                                  >
+                                    <div className="relative">
+                                      <img
+                                        src={getOptimizedImageUrl(deckCard.card, true) || "/placeholder.svg"}
+                                        alt={deckCard.card.name}
+                                        className="w-full h-auto rounded-lg shadow-lg cursor-pointer"
+                                        loading="lazy"
+                                        onClick={(e) => setSelectedCard(deckCard.card)}
+                                      />
+                                      <div className="absolute top-1 left-1 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
+                                        {deckCard.quantity}
+                                      </div>
+                                      {/* Overlay com nome da carta */}
+                                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1 rounded-b-lg">
+                                        <p className="text-white text-xs font-medium truncate">{deckCard.card.name}</p>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Área dos botões - apenas no canto inferior direito */}
+                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                      <div className="flex flex-col gap-1">
+                                        <Button
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            removeCardFromDeck(deckCard.card.id, 1, true)
+                                          }}
+                                          className="bg-red-600 hover:bg-red-700 text-white p-1"
+                                        >
+                                          <Minus className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            addCardToDeck(deckCard.card, 1, true)
+                                          }}
+                                          className="bg-blue-600 hover:bg-blue-700 text-white p-1"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8">
+                          <p className="text-gray-400 text-lg mb-2">Sideboard vazio</p>
+                          <p className="text-gray-500 text-sm">
+                            Use os botões <Plus className="w-4 h-4 inline mx-1" /> azuis para adicionar cartas
                           </p>
                         </div>
                       )}
@@ -3845,68 +3877,160 @@ Sideboard:
                   </Card>
                 </div>
               )}
+
+              {/* No Cards Loaded for Deck Builder */}
+              {!isSearchingCards && deckBuilderCards.length === 0 && (
+                <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
+                  <CardContent className="p-8 text-center">
+                    <p className="text-gray-400 text-lg mb-4">Carregando cartas para o construtor de deck...</p>
+                    <Button onClick={fetchDeckBuilderCards} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                      Carregar Cartas
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           </Tabs>
 
-          {/* Card Detail Dialog */}
-          <Dialog open={selectedCard !== null} onOpenChange={() => setSelectedCard(null)}>
-            <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
-              <DialogHeader>
-                <DialogTitle className="text-white">{selectedCard?.name}</DialogTitle>
-              </DialogHeader>
+          {/* Card Detail Modal */}
+          <Dialog open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
+            <DialogContent className="bg-gray-900 border-gray-700 max-w-4xl max-h-[90vh] overflow-y-auto">
               {selectedCard && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:order-1">
-                    <img
-                      src={
-                        selectedCard.image_uris?.normal ||
-                        selectedCard.card_faces?.[0]?.image_uris?.normal ||
-                        "/placeholder.svg" ||
-                        "/placeholder.svg" ||
-                        "/placeholder.svg" ||
-                        "/placeholder.svg"
-                      }
-                      alt={selectedCard.name}
-                      className="w-full h-auto rounded-lg shadow-lg"
-                    />
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="text-white text-2xl">{selectedCard.name}</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Left side - Card Image */}
+                    <div className="space-y-4">
+                      <img
+                        src={getOptimizedImageUrl(selectedCard) || "/placeholder.svg"}
+                        alt={selectedCard.name}
+                        className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
+                      />
+
+                      {/* Action buttons */}
+                      <div className="flex gap-2 justify-center">
+                        <Button
+                          onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", false)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Adicionar Normal
+                        </Button>
+                        <Button
+                          onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", true)}
+                          className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Adicionar Foil
+                        </Button>
+                      </div>
+
+                      {activeTab === "deckbuilder" && (
+                        <div className="flex gap-2 justify-center">
+                          <Button
+                            onClick={() => addCardToDeck(selectedCard, 1, false)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Deck Principal
+                          </Button>
+                          <Button
+                            onClick={() => addCardToDeck(selectedCard, 1, true)}
+                            className="bg-purple-600 hover:bg-purple-700 text-white"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Sideboard
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right side - Card Details */}
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-400">Custo de Mana:</span>
+                          <div
+                            className="text-white"
+                            dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.mana_cost || "N/A") }}
+                          />
+                        </div>
+                        <div>
+                          <span className="text-gray-400">CMC:</span>
+                          <p className="text-white">{selectedCard.cmc}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Tipo:</span>
+                          <p className="text-white">{selectedCard.type_line}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Raridade:</span>
+                          <Badge
+                            variant="outline"
+                            className={`${
+                              selectedCard.rarity === "mythic"
+                                ? "border-orange-500 text-orange-400"
+                                : selectedCard.rarity === "rare"
+                                  ? "border-yellow-500 text-yellow-400"
+                                  : selectedCard.rarity === "uncommon"
+                                    ? "border-gray-400 text-gray-300"
+                                    : "border-gray-600 text-gray-400"
+                            }`}
+                          >
+                            {selectedCard.rarity.charAt(0).toUpperCase() + selectedCard.rarity.slice(1)}
+                          </Badge>
+                        </div>
+                        {selectedCard.power && (
+                          <div>
+                            <span className="text-gray-400">Poder/Resistência:</span>
+                            <p className="text-white">
+                              {selectedCard.power}/{selectedCard.toughness}
+                            </p>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-gray-400">Edição:</span>
+                          <p className="text-white">{selectedCard.set_name}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Artista:</span>
+                          <p className="text-white">{selectedCard.artist}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Preço Estimado:</span>
+                          <p className="text-green-400 font-medium">R$ {getEstimatedPrice(selectedCard).toFixed(2)}</p>
+                        </div>
+                      </div>
+
+                      {selectedCard.oracle_text && (
+                        <div>
+                          <span className="text-gray-400 block mb-2">Texto do Oráculo:</span>
+                          <div
+                            className="text-white bg-gray-800 p-3 rounded-lg text-sm leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.oracle_text) }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Collection Status */}
+                      <div className="bg-gray-800 p-4 rounded-lg">
+                        <h4 className="text-white font-medium mb-2">Status na Coleção</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-400">Normal:</span>
+                            <p className="text-white">{getCardQuantityInCollection(selectedCard.id, false)} cópias</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Foil:</span>
+                            <p className="text-white">{getCardQuantityInCollection(selectedCard.id, true)} cópias</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-3 md:order-2">
-                    <p className="text-gray-400">
-                      <strong>Set:</strong> {selectedCard.set_name} ({selectedCard.set_code.toUpperCase()})
-                    </p>
-                    <p className="text-gray-400">
-                      <strong>Raridade:</strong> {selectedCard.rarity}
-                    </p>
-                    <p className="text-gray-400">
-                      <strong>Tipo:</strong> {selectedCard.type_line}
-                    </p>
-                    {selectedCard.oracle_text && (
-                      <p className="text-gray-400">
-                        <strong>Texto do Oráculo:</strong> {selectedCard.oracle_text}
-                      </p>
-                    )}
-                    {selectedCard.mana_cost && (
-                      <p className="text-gray-400">
-                        <strong>Custo de Mana:</strong>{" "}
-                        <span dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.mana_cost) }} />
-                      </p>
-                    )}
-                    {selectedCard.power && selectedCard.toughness && (
-                      <p className="text-gray-400">
-                        <strong>Poder/Resistência:</strong> {selectedCard.power}/{selectedCard.toughness}
-                      </p>
-                    )}
-                    <p className="text-gray-400">
-                      <strong>Artista:</strong> {selectedCard.artist}
-                    </p>
-                    <p className="text-gray-400">
-                      <strong>Idioma:</strong> {selectedCard.lang}
-                    </p>
-                    <p className="text-gray-400">
-                      <strong>Lançamento:</strong> {new Date(selectedCard.released_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
+                </>
               )}
             </DialogContent>
           </Dialog>
@@ -3920,12 +4044,12 @@ Sideboard:
               <form onSubmit={handleLogin} className="space-y-4">
                 {isRegistering && (
                   <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Nome</label>
+                    <label className="text-sm font-medium text-white mb-2 block">Nome Completo</label>
                     <Input
                       type="text"
                       placeholder="Seu nome completo"
                       value={loginForm.name}
-                      onChange={(e) => setLoginForm({ ...loginForm, name: e.target.value })}
+                      onChange={(e) => setLoginForm((prev) => ({ ...prev, name: e.target.value }))}
                       className={inputClasses}
                       required
                     />
@@ -3935,243 +4059,136 @@ Sideboard:
                   <label className="text-sm font-medium text-white mb-2 block">Email</label>
                   <Input
                     type="email"
-                    placeholder="seuemail@exemplo.com"
+                    placeholder="seu@email.com"
                     value={loginForm.email}
-                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                    onChange={(e) => setLoginForm((prev) => ({ ...prev, email: e.target.value }))}
                     className={inputClasses}
                     required
                   />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-white mb-2 block">Senha</label>
-                  <div className="relative">
-                    <Input
-                      type={showCurrentPassword ? "text" : "password"}
-                      placeholder="Senha"
-                      value={loginForm.password}
-                      onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                      className={inputClasses}
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
-                    >
-                      {showCurrentPassword ? "Ocultar" : "Mostrar"}
-                    </Button>
-                  </div>
+                  <Input
+                    type="password"
+                    placeholder="Sua senha"
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
+                    className={inputClasses}
+                    required
+                  />
                 </div>
                 {isRegistering && (
                   <div>
                     <label className="text-sm font-medium text-white mb-2 block">Confirmar Senha</label>
-                    <div className="relative">
-                      <Input
-                        type={showConfirmPassword ? "text" : "password"}
-                        placeholder="Confirmar Senha"
-                        value={loginForm.confirmPassword}
-                        onChange={(e) => setLoginForm({ ...loginForm, confirmPassword: e.target.value })}
-                        className={inputClasses}
-                        required
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
-                      >
-                        {showConfirmPassword ? "Ocultar" : "Mostrar"}
-                      </Button>
-                    </div>
+                    <Input
+                      type="password"
+                      placeholder="Confirme sua senha"
+                      value={loginForm.confirmPassword}
+                      onChange={(e) => setLoginForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                      className={inputClasses}
+                      required
+                    />
                   </div>
                 )}
-                <div className="flex justify-between items-center">
-                  <Button
-                    type="submit"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2"
-                    disabled={loginLoading}
-                  >
-                    {loginLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : isRegistering ? (
-                      "Criar Conta"
-                    ) : (
-                      "Entrar"
-                    )}
-                  </Button>
+                <div className="flex gap-2 justify-between items-center">
                   <Button
                     type="button"
-                    variant="link"
+                    variant="ghost"
                     onClick={toggleAuthMode}
-                    className="text-gray-400 hover:text-gray-300"
+                    className="text-emerald-400 hover:text-emerald-300"
                   >
-                    {isRegistering ? "Já tem uma conta? Entrar" : "Criar uma conta"}
+                    {isRegistering ? "Já tem conta? Entrar" : "Não tem conta? Registrar"}
                   </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowLoginDialog(false)}
+                      className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={loginLoading}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {loginLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : isRegistering ? (
+                        "Criar Conta"
+                      ) : (
+                        "Entrar"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </form>
-              <div className="mt-4 text-center">
-                <p className="text-gray-500 mb-2">Ou entre com:</p>
-                <div className="flex justify-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSocialLogin("google")}
-                    className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                  >
-                    Google
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSocialLogin("facebook")}
-                    className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                  >
-                    Facebook
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSocialLogin("github")}
-                    className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                  >
-                    GitHub
-                  </Button>
-                </div>
-              </div>
             </DialogContent>
           </Dialog>
 
           {/* Profile Dialog */}
           <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
-            <DialogContent className="bg-gray-900 border-gray-700">
+            <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
               <DialogHeader>
-                <DialogTitle className="text-white">Editar Perfil</DialogTitle>
+                <DialogTitle className="text-white">Perfil do Usuário</DialogTitle>
               </DialogHeader>
-              {currentUser && (
-                <form onSubmit={handleProfileUpdate} className="space-y-4">
+              <form onSubmit={handleProfileUpdate} className="space-y-6">
+                <div className="flex items-center gap-4">
+                  <img
+                    src={currentUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.email}`}
+                    alt={currentUser?.name}
+                    className="w-20 h-20 rounded-full border-2 border-emerald-500"
+                  />
+                  <div>
+                    <h3 className="text-white text-xl font-medium">{currentUser?.name}</h3>
+                    <p className="text-gray-400">{currentUser?.email}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-white mb-2 block">Nome</label>
-                    <div className="flex gap-2">
-                      <Input
-                        type="text"
-                        placeholder="Primeiro Nome"
-                        value={profileForm.firstName}
-                        onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
-                        className={inputClasses}
-                      />
-                      <Input
-                        type="text"
-                        placeholder="Sobrenome"
-                        value={profileForm.lastName}
-                        onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
-                        className={inputClasses}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Email</label>
                     <Input
-                      type="email"
-                      placeholder="seuemail@exemplo.com"
-                      value={profileForm.email}
-                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                      type="text"
+                      placeholder="Seu nome"
+                      value={profileForm.firstName}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))}
                       className={inputClasses}
-                      required
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Bio</label>
-                    <Textarea
-                      placeholder="Uma breve descrição sobre você..."
-                      value={profileForm.bio}
-                      onChange={(e) => setProfileForm({ ...profileForm, bio: e.target.value })}
+                    <label className="text-sm font-medium text-white mb-2 block">Sobrenome</label>
+                    <Input
+                      type="text"
+                      placeholder="Seu sobrenome"
+                      value={profileForm.lastName}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))}
                       className={inputClasses}
-                      rows={3}
                     />
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Senha Atual</label>
-                    <div className="relative">
-                      <Input
-                        type={showCurrentPassword ? "text" : "password"}
-                        placeholder="Senha Atual"
-                        value={profileForm.currentPassword}
-                        onChange={(e) => setProfileForm({ ...profileForm, currentPassword: e.target.value })}
-                        className={inputClasses}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
-                      >
-                        {showCurrentPassword ? "Ocultar" : "Mostrar"}
-                      </Button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Nova Senha</label>
-                    <div className="relative">
-                      <Input
-                        type={showNewPassword ? "text" : "password"}
-                        placeholder="Nova Senha"
-                        value={profileForm.newPassword}
-                        onChange={(e) => setProfileForm({ ...profileForm, newPassword: e.target.value })}
-                        className={inputClasses}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
-                      >
-                        {showNewPassword ? "Ocultar" : "Mostrar"}
-                      </Button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Confirmar Nova Senha</label>
-                    <div className="relative">
-                      <Input
-                        type={showConfirmPassword ? "text" : "password"}
-                        placeholder="Confirmar Nova Senha"
-                        value={profileForm.confirmNewPassword}
-                        onChange={(e) => setProfileForm({ ...profileForm, confirmNewPassword: e.target.value })}
-                        className={inputClasses}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300"
-                      >
-                        {showConfirmPassword ? "Ocultar" : "Mostrar"}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <Button
-                      type="submit"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2"
-                      disabled={loginLoading}
-                    >
-                      {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-    </div>
-  )
-}
+                </div>
 
-export default MTGCollectionManager
+                <div>
+                  <label className="text-sm font-medium text-white mb-2 block">Email</label>
+                  <Input
+                    type="email"
+                    placeholder="seu@email.com"
+                    value={profileForm.email}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))}
+                    className={inputClasses}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-white mb-2 block">Bio</label>
+                  <Textarea
+                    placeholder="Conte um pouco sobre você..."
+                    value={profileForm.bio}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))}
+                    className={inputClasses}
+                    rows={3}
+                  />
+                </div>
+
+                <div\

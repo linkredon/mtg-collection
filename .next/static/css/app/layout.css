@@ -692,6 +692,9 @@ video {
 .z-\[1\] {
   z-index: 1;
 }
+.row-start-2 {
+  grid-row-start: 2;
+}
 .-mx-1 {
   margin-left: -0.25rem;
   margin-right: -0.25rem;
@@ -1088,6 +1091,9 @@ video {
 .grid-cols-1 {
   grid-template-columns: repeat(1, minmax(0, 1fr));
 }
+.grid-rows-\[20px_1fr_20px\] {
+  grid-template-rows: 20px 1fr 20px;
+}
 .flex-row {
   flex-direction: row;
 }
@@ -1118,6 +1124,9 @@ video {
 .justify-between {
   justify-content: space-between;
 }
+.justify-items-center {
+  justify-items: center;
+}
 .gap-1 {
   gap: 0.25rem;
 }
@@ -1135,6 +1144,12 @@ video {
 }
 .gap-6 {
   gap: 1.5rem;
+}
+.gap-16 {
+  gap: 4rem;
+}
+.gap-8 {
+  gap: 2rem;
 }
 .space-x-1 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-x-reverse: 0;
@@ -1211,6 +1226,9 @@ video {
 }
 .rounded-sm {
   border-radius: calc(var(--radius) - 4px);
+}
+.rounded {
+  border-radius: 0.25rem;
 }
 .rounded-t-\[10px\] {
   border-top-left-radius: 10px;
@@ -1340,6 +1358,9 @@ video {
 .bg-white\/90 {
   background-color: rgb(255 255 255 / 0.9);
 }
+.bg-black\/\[\.05\] {
+  background-color: rgb(0 0 0 / .05);
+}
 .bg-gradient-to-br {
   background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
 }
@@ -1380,6 +1401,9 @@ video {
 }
 .p-\[1px\] {
   padding: 1px;
+}
+.p-8 {
+  padding: 2rem;
 }
 .px-1 {
   padding-left: 0.25rem;
@@ -1473,6 +1497,9 @@ video {
 .pt-4 {
   padding-top: 1rem;
 }
+.pb-20 {
+  padding-bottom: 5rem;
+}
 .text-left {
   text-align: left;
 }
@@ -1484,6 +1511,9 @@ video {
 }
 .font-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.font-\[family-name\:var\(--font-geist-sans\)\] {
+  font-family: var(--font-geist-sans);
 }
 .text-2xl {
   font-size: 1.5rem;
@@ -2640,6 +2670,9 @@ video {
 .dark\:border-destructive:is(.dark *) {
   border-color: hsl(var(--destructive));
 }
+.dark\:bg-white\/\[\.06\]:is(.dark *) {
+  background-color: rgb(255 255 255 / .06);
+}
 @media (min-width: 640px) {
 
   .sm\:bottom-0 {
@@ -2674,6 +2707,10 @@ video {
     flex-direction: column;
   }
 
+  .sm\:items-start {
+    align-items: flex-start;
+  }
+
   .sm\:justify-end {
     justify-content: flex-end;
   }
@@ -2702,6 +2739,10 @@ video {
 
   .sm\:rounded-lg {
     border-radius: var(--radius);
+  }
+
+  .sm\:p-20 {
+    padding: 5rem;
   }
 
   .sm\:text-left {

@@ -258,6 +258,16 @@ export default function MTGCollectionManager() {
   const [filterName, setFilterName] = useState("")
   const [showLoadDialog, setShowLoadDialog] = useState(false)
 
+  // Rules tab states
+  const [rulesSearchQuery, setRulesSearchQuery] = useState("")
+  const [selectedRulesCard, setSelectedRulesCard] = useState<MTGCard | null>(null)
+  const [cardRulings, setCardRulings] = useState<any[]>([])
+  const [isLoadingRulings, setIsLoadingRulings] = useState(false)
+  const [rulesSource, setRulesSource] = useState<"search" | "collection" | "deck">("search")
+  const [selectedCollectionForRules, setSelectedCollectionForRules] = useState<string>("")
+  const [selectedDeckForRules, setSelectedDeckForRules] = useState<string>("")
+  const [availableRulesCards, setAvailableRulesCards] = useState<MTGCard[]>([])
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const columnOptions = [3, 5, 7]
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -793,7 +803,7 @@ export default function MTGCollectionManager() {
       format: "standard",
       mainboard: [],
       sideboard: [],
-      description: "",
+      description: "", // Changed from 'sdescription' to 'description'
       createdAt: "",
       updatedAt: "",
     })
@@ -831,8 +841,8 @@ export default function MTGCollectionManager() {
 
       if (imageUrl) {
         console.log("URL da imagem:", imageUrl)
-        setBackgroundImage(imageUrl)
         localStorage.setItem("mtg-background-image", imageUrl)
+        setBackgroundImage(imageUrl)
         console.log("Background definido com sucesso!")
       } else {
         console.warn("Nenhuma imagem encontrada na carta")
@@ -860,7 +870,8 @@ export default function MTGCollectionManager() {
       if (isRegistering) {
         // Simular registro
         if (loginForm.password !== loginForm.confirmPassword) {
-          alert("Senhas não coincidem!")
+          // Use um modal personalizado ou um elemento de UI para mensagens
+          console.error("Senhas não coincidem!")
           return
         }
 
@@ -876,7 +887,7 @@ export default function MTGCollectionManager() {
 
         setCurrentUser(newUser)
         localStorage.setItem("mtg-user", JSON.stringify(newUser))
-        console.log("Usuário registrado com sucesso!")
+        console.log("Utilizador registado com sucesso!")
       } else {
         // Simular login
         const user = {
@@ -891,7 +902,7 @@ export default function MTGCollectionManager() {
 
         setCurrentUser(user)
         localStorage.setItem("mtg-user", JSON.stringify(user))
-        console.log("Login realizado com sucesso!")
+        console.log("Login efetuado com sucesso!")
       }
 
       setIsAuthenticated(true)
@@ -899,7 +910,8 @@ export default function MTGCollectionManager() {
       setLoginForm({ email: "", password: "", name: "", confirmPassword: "" })
     } catch (error) {
       console.error("Erro na autenticação:", error)
-      alert("Erro na autenticação. Tente novamente.")
+      // Use um modal personalizado ou um elemento de UI para mensagens
+      console.error("Erro na autenticação. Tente novamente.")
     } finally {
       setLoginLoading(false)
     }
@@ -923,7 +935,7 @@ export default function MTGCollectionManager() {
       updatedAt: "",
       isPublic: false,
     })
-    console.log("Logout realizado com sucesso!")
+    console.log("Logout efetuado com sucesso!")
   }
 
   const toggleAuthMode = () => {
@@ -940,14 +952,16 @@ export default function MTGCollectionManager() {
       // Simular atualização de perfil
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      // Validar senha atual (simulado)
+      // Validar palavra-passe atual (simulado)
       if (profileForm.newPassword && !profileForm.currentPassword) {
-        alert("Digite sua senha atual para alterar a senha.")
+        // Use um modal personalizado ou um elemento de UI para mensagens
+        console.error("Digite a sua palavra-passe atual para alterar a palavra-passe.")
         return
       }
 
       if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmNewPassword) {
-        alert("As novas senhas não coincidem!")
+        // Use um modal personalizado ou um elemento de UI para mensagens
+        console.error("As novas palavras-passe não coincidem!")
         return
       }
 
@@ -964,7 +978,7 @@ export default function MTGCollectionManager() {
       localStorage.setItem("mtg-user", JSON.stringify(updatedUser))
       setShowProfileDialog(false)
 
-      // Limpar campos de senha
+      // Limpar campos de palavra-passe
       setProfileForm((prev) => ({
         ...prev,
         currentPassword: "",
@@ -973,10 +987,12 @@ export default function MTGCollectionManager() {
       }))
 
       console.log("Perfil atualizado com sucesso!")
-      alert("Perfil atualizado com sucesso!")
+      // Use um modal personalizado ou um elemento de UI para mensagens
+      console.log("Perfil atualizado com sucesso!")
     } catch (error) {
       console.error("Erro ao atualizar perfil:", error)
-      alert("Erro ao atualizar perfil. Tente novamente.")
+      // Use um modal personalizado ou um elemento de UI para mensagens
+      console.error("Erro ao atualizar perfil. Tente novamente.")
     } finally {
       setLoginLoading(false)
     }
@@ -988,7 +1004,7 @@ export default function MTGCollectionManager() {
     if (!file) return
 
     setLoading(true)
-    setLoadingMessage("Processando coleção...")
+    setLoadingMessage("A processar coleção...")
 
     try {
       const text = await file.text()
@@ -998,7 +1014,7 @@ export default function MTGCollectionManager() {
         .filter(Boolean)
 
       if (lines.length <= 1) {
-        console.log("O arquivo CSV está vazio ou contém apenas cabeçalhos.")
+        console.log("O ficheiro CSV está vazio ou contém apenas cabeçalhos.")
         return
       }
 
@@ -1135,7 +1151,7 @@ export default function MTGCollectionManager() {
           confirmNewPassword: "",
         })
       } catch (error) {
-        console.error("Erro ao carregar usuário salvo:", error)
+        console.error("Erro ao carregar utilizador salvo:", error)
         localStorage.removeItem("mtg-user")
       }
     }
@@ -1200,7 +1216,8 @@ export default function MTGCollectionManager() {
   // Função para salvar filtros atuais
   const saveCurrentFilters = () => {
     if (!filterName.trim()) {
-      alert("Por favor, digite um nome para o filtro.")
+      // Use um modal personalizado ou um elemento de UI para mensagens
+      console.error("Por favor, digite um nome para o filtro.")
       return
     }
 
@@ -1266,7 +1283,7 @@ export default function MTGCollectionManager() {
 
   // Função para cancelar carregamento
   const cancelLoading = () => {
-    console.log("Cancelando carregamento...")
+    console.log("A cancelar carregamento...")
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
@@ -1290,11 +1307,11 @@ export default function MTGCollectionManager() {
   // Função para carregar cartas gerais (para coleção)
   const fetchGeneralCards = async () => {
     if (isLoadingCards) {
-      console.log("Já está carregando cartas, ignorando nova chamada")
+      console.log("Já está a carregar cartas, a ignorar nova chamada")
       return
     }
 
-    console.log("Iniciando carregamento de cartas gerais...")
+    console.log("A iniciar carregamento de cartas gerais...")
 
     // Cancelar requisição anterior se existir
     if (abortControllerRef.current) {
@@ -1304,14 +1321,14 @@ export default function MTGCollectionManager() {
     abortControllerRef.current = new AbortController()
     setIsLoadingCards(true)
     setLoading(true)
-    setLoadingMessage("Carregando cartas...")
+    setLoadingMessage("A carregar cartas...")
 
     try {
-      // Usar uma query mais simples e confiável
+      // Usar uma query mais simples e fiável
       let url = "https://api.scryfall.com/cards/search?q=game:paper&unique=prints&order=released"
       let cards: MTGCard[] = []
       let pageCount = 0
-      const maxPages = 30 // Reduzir para evitar rate limits
+      const maxPages = 30 // Reduzir para evitar limites de taxa
       let consecutiveErrors = 0
       const maxConsecutiveErrors = 3
 
@@ -1323,11 +1340,11 @@ export default function MTGCollectionManager() {
         }
 
         pageCount++
-        setLoadingMessage(`Carregando cartas (página ${pageCount}/${maxPages})...`)
-        console.log(`Carregando página ${pageCount}`)
+        setLoadingMessage(`A carregar cartas (página ${pageCount}/${maxPages})...`)
+        console.log(`A carregar página ${pageCount}`)
 
         try {
-          // Delay progressivo para evitar rate limits
+          // Atraso progressivo para evitar limites de taxa
           const delay = Math.min(200 + pageCount * 50, 1000)
           await new Promise((r) => setTimeout(r, delay))
 
@@ -1341,14 +1358,14 @@ export default function MTGCollectionManager() {
 
           if (!response.ok) {
             if (response.status === 429) {
-              // Rate limit - aguardar mais tempo
-              console.log("Rate limit atingido, aguardando 2 segundos...")
+              // Limite de taxa - aguardar mais tempo
+              console.log("Limite de taxa atingido, a aguardar 2 segundos...")
               await new Promise((r) => setTimeout(r, 2000))
               consecutiveErrors++
               continue
             } else if (response.status >= 500) {
               // Erro do servidor - tentar novamente
-              console.log(`Erro do servidor (${response.status}), tentando novamente...`)
+              console.log(`Erro do servidor (${response.status}), a tentar novamente...`)
               consecutiveErrors++
               await new Promise((r) => setTimeout(r, 1000))
               continue
@@ -1360,7 +1377,7 @@ export default function MTGCollectionManager() {
           const data = await response.json()
 
           if (!data.data || data.data.length === 0) {
-            console.log("Nenhum dado retornado, parando")
+            console.log("Nenhum dado retornado, a parar")
             break
           }
 
@@ -1375,7 +1392,7 @@ export default function MTGCollectionManager() {
           })
 
           cards = cards.concat(newCards)
-          consecutiveErrors = 0 // Reset contador de erros
+          consecutiveErrors = 0 // Reiniciar contador de erros
           console.log(`Página ${pageCount}: ${newCards.length} cartas válidas, total: ${cards.length}`)
 
           // Verificar se há mais páginas
@@ -1395,13 +1412,13 @@ export default function MTGCollectionManager() {
           console.error(`Erro na página ${pageCount}:`, error.message)
 
           if (consecutiveErrors >= maxConsecutiveErrors) {
-            console.log("Muitos erros consecutivos, parando o carregamento")
+            console.log("Muitos erros consecutivos, a parar o carregamento")
             break
           }
 
           // Aguardar antes de tentar novamente
           const retryDelay = Math.min(1000 * consecutiveErrors, 5000)
-          console.log(`Aguardando ${retryDelay}ms antes de tentar novamente...`)
+          console.log(`A aguardar ${retryDelay}ms antes de tentar novamente...`)
           await new Promise((r) => setTimeout(r, retryDelay))
         }
       }
@@ -1413,7 +1430,7 @@ export default function MTGCollectionManager() {
       }
 
       if (cards.length === 0) {
-        console.log("Nenhuma carta foi carregada, tentando fallback...")
+        console.log("Nenhuma carta foi carregada, a tentar fallback...")
         // Tentar uma query ainda mais simples
         try {
           const fallbackResponse = await fetch("https://api.scryfall.com/cards/search?q=*&page=1", {
@@ -1480,7 +1497,7 @@ export default function MTGCollectionManager() {
         return
       }
       console.error("Erro geral no carregamento:", error)
-      setLoadingMessage("Erro ao carregar cartas. Verifique sua conexão.")
+      setLoadingMessage("Erro ao carregar cartas. Verifique a sua ligação.")
     } finally {
       setIsLoadingCards(false)
       setLoading(false)
@@ -1488,32 +1505,32 @@ export default function MTGCollectionManager() {
     }
   }
 
-  // Função para carregar cartas para o deck builder (todas as cartas)
+  // Função para carregar cartas para o construtor de deck (todas as cartas)
   const fetchDeckBuilderCards = async () => {
     if (deckBuilderCards.length > 0) {
-      console.log("Cartas do deck builder já carregadas")
+      console.log("Cartas do construtor de deck já carregadas")
       return
     }
 
     setIsSearchingCards(true)
-    setLoadingMessage("Carregando cartas para o deck builder...")
+    setLoadingMessage("A carregar cartas para o construtor de deck...")
 
     try {
-      // Usar query mais específica para deck building (cartas únicas)
+      // Usar query mais específica para construção de deck (cartas únicas)
       let url = "https://api.scryfall.com/cards/search?q=game:paper&unique=cards&order=name"
       let cards: MTGCard[] = []
       let pageCount = 0
-      const maxPages = 25 // Limite menor para deck builder
+      const maxPages = 25 // Limite menor para construtor de deck
       let consecutiveErrors = 0
       const maxConsecutiveErrors = 3
 
       while (url && pageCount < maxPages && consecutiveErrors < maxConsecutiveErrors) {
         pageCount++
-        setLoadingMessage(`Carregando cartas para deck builder (${pageCount}/${maxPages})...`)
-        console.log(`Carregando página ${pageCount} para deck builder`)
+        setLoadingMessage(`A carregar cartas para construtor de deck (${pageCount}/${maxPages})...`)
+        console.log(`A carregar página ${pageCount} para construtor de deck`)
 
         try {
-          // Delay para evitar rate limits
+          // Atraso para evitar limites de taxa
           const delay = Math.min(300 + pageCount * 50, 1000)
           await new Promise((r) => setTimeout(r, delay))
 
@@ -1550,7 +1567,7 @@ export default function MTGCollectionManager() {
 
           cards = cards.concat(newCards)
           consecutiveErrors = 0
-          console.log(`Deck builder página ${pageCount}: ${newCards.length} cartas, total: ${cards.length}`)
+          console.log(`Página ${pageCount} do construtor de deck: ${newCards.length} cartas, total: ${cards.length}`)
 
           if (!data.has_more || !data.next_page) {
             break
@@ -1559,10 +1576,10 @@ export default function MTGCollectionManager() {
           url = data.next_page
         } catch (error: any) {
           consecutiveErrors++
-          console.error(`Erro na página ${pageCount} do deck builder:`, error.message)
+          console.error(`Erro na página ${pageCount} do construtor de deck:`, error.message)
 
           if (consecutiveErrors >= maxConsecutiveErrors) {
-            console.log("Muitos erros consecutivos no deck builder, parando")
+            console.log("Muitos erros consecutivos no construtor de deck, a parar")
             break
           }
 
@@ -1577,9 +1594,9 @@ export default function MTGCollectionManager() {
         .sort((a, b) => a.name.localeCompare(b.name))
 
       setDeckBuilderCards(uniqueCards)
-      console.log(`${uniqueCards.length} cartas únicas carregadas para o deck builder`)
+      console.log(`${uniqueCards.length} cartas únicas carregadas para o construtor de deck`)
     } catch (error) {
-      console.error("Erro ao carregar cartas do deck builder:", error)
+      console.error("Erro ao carregar cartas do construtor de deck:", error)
     } finally {
       setIsSearchingCards(false)
     }
@@ -1710,19 +1727,83 @@ export default function MTGCollectionManager() {
     setFilteredDeckCards(filtered)
   }
 
+  // Função para buscar regras da carta
+  const fetchCardRulings = async (card: MTGCard) => {
+    setIsLoadingRulings(true)
+    setCardRulings([])
+    
+    try {
+      // Primeiro, tentar buscar rulings da API do Scryfall
+      const rulingsResponse = await fetch(`https://api.scryfall.com/cards/${card.id}/rulings`)
+      
+      if (rulingsResponse.ok) {
+        const rulingsData = await rulingsResponse.json()
+        if (rulingsData.data && rulingsData.data.length > 0) {
+          setCardRulings(rulingsData.data)
+        } else {
+          // Se não há rulings no Scryfall, tentar informações adicionais
+          setCardRulings([{
+            source: "scryfall",
+            published_at: card.released_at,
+            comment: "Nenhuma regra específica encontrada para esta carta. Consulte as regras gerais do Magic."
+          }])
+        }
+      } else {
+        throw new Error("Falha ao buscar regras")
+      }
+    } catch (error) {
+      console.error("Erro ao buscar regras:", error)
+      setCardRulings([{
+        source: "error",
+        published_at: new Date().toISOString(),
+        comment: "Erro ao carregar regras. Tente novamente mais tarde."
+      }])
+    } finally {
+      setIsLoadingRulings(false)
+    }
+  }
+
+  // Função para carregar cartas da coleção selecionada
+  const loadCardsFromCollection = (collectionId: string) => {
+    const collection = savedCollections.find(c => c.id === collectionId)
+    if (collection) {
+      const cards = collection.cards.map(cc => cc.card)
+      setAvailableRulesCards(cards)
+    }
+  }
+
+  // Função para carregar cartas do deck selecionado
+  const loadCardsFromDeck = (deckId: string) => {
+    const deck = savedDecks.find(d => d.id === deckId)
+    if (deck) {
+      const allCards = [
+        ...deck.mainboard.map(dc => dc.card),
+        ...deck.sideboard.map(dc => dc.card)
+      ]
+      if (deck.commander) {
+        allCards.push(deck.commander.card)
+      }
+      // Remover duplicatas
+      const uniqueCards = allCards.filter((card, index, self) => 
+        index === self.findIndex(c => c.id === card.id)
+      )
+      setAvailableRulesCards(uniqueCards)
+    }
+  }
+
   // Carregar cartas automaticamente quando o componente monta
   useEffect(() => {
     fetchGeneralCards()
   }, [])
 
-  // Carregar cartas do deck builder quando a aba é acessada
+  // Carregar cartas do construtor de deck quando a aba é acedida
   useEffect(() => {
     if (activeTab === "deckbuilder" && deckBuilderCards.length === 0) {
       fetchDeckBuilderCards()
     }
   }, [activeTab])
 
-  // Effect para aplicar filtros quando dados mudam
+  // Efeito para aplicar filtros quando dados mudam
   useEffect(() => {
     if (allCards.length > 0) {
       applyFilters()
@@ -1747,14 +1828,25 @@ export default function MTGCollectionManager() {
     sortAscending,
   ])
 
-  // Effect para aplicar filtros ao construtor de deck
+  // Efeito para aplicar filtros ao construtor de deck
   useEffect(() => {
     if (deckBuilderCards.length > 0) {
       applyDeckFilters()
     }
   }, [deckBuilderCards, deckSearchQuery, rarityFilter, cmcFilter, powerFilter, toughnessFilter, activeColors])
 
-  // Cleanup ao desmontar componente
+  // Efeito para atualizar cartas disponíveis quando a fonte muda
+  useEffect(() => {
+    if (rulesSource === "collection" && selectedCollectionForRules) {
+      loadCardsFromCollection(selectedCollectionForRules)
+    } else if (rulesSource === "deck" && selectedDeckForRules) {
+      loadCardsFromDeck(selectedDeckForRules)
+    } else if (rulesSource === "search") {
+      setAvailableRulesCards([])
+    }
+  }, [rulesSource, selectedCollectionForRules, selectedDeckForRules, savedCollections, savedDecks])
+
+  // Limpeza ao desmontar componente
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
@@ -1786,12 +1878,12 @@ export default function MTGCollectionManager() {
     {} as Record<string, MTGCard[]>,
   )
 
-  // Classes padrão para inputs e selects
+  // Classes padrão para inputs e seleções
   const inputClasses =
     "bg-gray-900 border-gray-600 text-white placeholder-gray-400 focus:ring-emerald-500 focus:border-emerald-500"
   const selectClasses = "bg-gray-900 border-gray-600 text-white focus:ring-emerald-500 focus:border-emerald-500"
 
-  // Color maps para gráficos
+  // Mapas de cores para gráficos
   const colorMap = {
     W: "#fffbd5",
     U: "#0e68ab",
@@ -1853,7 +1945,7 @@ export default function MTGCollectionManager() {
                 </Button>
               </div>
 
-              {/* User section */}
+              {/* Seção de Utilizador */}
               <div className="flex items-center gap-4">
                 {isAuthenticated && currentUser ? (
                   <div className="flex items-center gap-3">
@@ -1895,44 +1987,52 @@ export default function MTGCollectionManager() {
               </div>
             </div>
 
-            {isLoadingBackground && <p className="text-xs text-gray-400 mt-1">Carregando nova imagem...</p>}
+            {isLoadingBackground && <p className="text-xs text-gray-400 mt-1">A carregar nova imagem...</p>}
             {backgroundImage && !isLoadingBackground && <p className="text-xs text-gray-500 mt-1">Background ativo</p>}
-            <p className="text-gray-300">Gerencie sua coleção de Magic: The Gathering</p>
+            <p className="text-gray-300">Gerencie a sua coleção de Magic: The Gathering</p>
           </div>
 
-          {/* Tabs Navigation */}
+          {/* Navegação de separadores */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-gray-800/70 border-gray-700 backdrop-blur-sm mb-4 sm:mb-6">
-              <TabsTrigger
-                value="collection"
-                className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-300"
-              >
-                <Library className="w-4 h-4 mr-2" />
-                Coleção
-              </TabsTrigger>
-              <TabsTrigger
-                value="dashboard"
-                className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-300"
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Dashboard
-              </TabsTrigger>
-              <TabsTrigger
-                value="deckbuilder"
-                className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-300"
-              >
-                <Hammer className="w-4 h-4 mr-2" />
-                Construtor de Deck
-              </TabsTrigger>
-            </TabsList>
+            
+<TabsList className="grid w-full grid-cols-4 bg-gray-800/70 border-gray-700 backdrop-blur-sm mb-4 sm:mb-6">
+  <TabsTrigger
+    value="collection"
+    className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-300"
+  >
+    <Library className="w-4 h-4 mr-2" />
+    Coleção
+  </TabsTrigger>
+  <TabsTrigger
+    value="dashboard"
+    className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-300"
+  >
+    <BarChart3 className="w-4 h-4 mr-2" />
+    Painel de controlo
+  </TabsTrigger>
+  <TabsTrigger
+    value="deckbuilder"
+    className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-300"
+  >
+    <Hammer className="w-4 h-4 mr-2" />
+    Construtor de baralhos
+  </TabsTrigger>
+  <TabsTrigger
+    value="rules"
+    className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-300"
+  >
+    <FileText className="w-4 h-4 mr-2" />
+    Regras
+  </TabsTrigger>
+</TabsList>
 
-            {/* Collection Tab */}
+            {/* Separador da Coleção */}
             <TabsContent value="collection" className="space-y-6">
-              {/* Collection Header */}
+              {/* Cabeçalho da Coleção */}
               <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                 <CardContent className="p-6">
                   <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Left side - Collection Info */}
+                    {/* Lado esquerdo - Informações da Coleção */}
                     <div className="flex-1 space-y-4">
                       <div className="flex items-center gap-4">
                         <Input
@@ -1969,7 +2069,7 @@ export default function MTGCollectionManager() {
                       </div>
                     </div>
 
-                    {/* Right side - Actions */}
+                    {/* Lado direito - Ações */}
                     <div className="flex flex-wrap gap-2">
                       <Button
                         variant="outline"
@@ -1988,12 +2088,12 @@ export default function MTGCollectionManager() {
                             className="bg-blue-600 border-blue-500 text-white hover:bg-blue-700"
                           >
                             <Save className="w-4 h-4 mr-2" />
-                            Salvar Coleção
+                            Guardar Coleção
                           </Button>
                         </DialogTrigger>
                         <DialogContent className="bg-gray-900 border-gray-700">
                           <DialogHeader>
-                            <DialogTitle className="text-white">Salvar Coleção</DialogTitle>
+                            <DialogTitle className="text-white">Guardar Coleção</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-4">
                             <div>
@@ -2024,7 +2124,7 @@ export default function MTGCollectionManager() {
                                 Cancelar
                               </Button>
                               <Button onClick={saveCollection} className="bg-blue-600 hover:bg-blue-700 text-white">
-                                Salvar
+                                Guardar
                               </Button>
                             </div>
                           </div>
@@ -2045,11 +2145,11 @@ export default function MTGCollectionManager() {
                         </DialogTrigger>
                         <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
                           <DialogHeader>
-                            <DialogTitle className="text-white">Coleções Salvas</DialogTitle>
+                            <DialogTitle className="text-white">Coleções Guardadas</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-3 max-h-96 overflow-y-auto">
                             {savedCollections.length === 0 ? (
-                              <p className="text-gray-400 text-center py-4">Nenhuma coleção salva ainda.</p>
+                              <p className="text-gray-400 text-center py-4">Nenhuma coleção guardada ainda.</p>
                             ) : (
                               savedCollections.map((collection) => (
                                 <div key={collection.id} className="bg-gray-800 p-4 rounded-lg border border-gray-600">
@@ -2058,7 +2158,7 @@ export default function MTGCollectionManager() {
                                       <h3 className="text-white font-medium mb-1">{collection.name}</h3>
                                       <p className="text-sm text-gray-400 mb-2">
                                         <strong>Cartas:</strong> {collection.cards.length} • <strong>Criado:</strong>{" "}
-                                        {new Date(collection.createdAt).toLocaleDateString("pt-BR")}
+                                        {new Date(collection.createdAt).toLocaleDateString("pt-PT")}
                                       </p>
                                       {collection.description && (
                                         <p className="text-xs text-gray-500">{collection.description}</p>
@@ -2110,13 +2210,13 @@ export default function MTGCollectionManager() {
                 </CardContent>
               </Card>
 
-              {/* Search and Basic Filters */}
+              {/* Procurar e Filtros Básicos */}
               <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                 <CardContent className="p-4">
                   <div className="flex flex-wrap gap-4 items-center justify-center">
                     <div className="flex-1 min-w-48">
                       <Input
-                        placeholder="Buscar cartas..."
+                        placeholder="Procurar cartas..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className={inputClasses}
@@ -2161,7 +2261,7 @@ export default function MTGCollectionManager() {
                       )}
                     </Button>
 
-                    {/* Botões para gerenciar filtros salvos */}
+                    {/* Botões para gerenciar filtros guardados */}
                     <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
                       <DialogTrigger asChild>
                         <Button
@@ -2170,12 +2270,12 @@ export default function MTGCollectionManager() {
                           className="bg-blue-600 border-blue-500 text-white hover:bg-blue-700"
                         >
                           <Save className="w-4 h-4 mr-2" />
-                          Salvar Filtros
+                          Guardar Filtros
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="bg-gray-900 border-gray-700">
                         <DialogHeader>
-                          <DialogTitle className="text-white">Salvar Filtros Atuais</DialogTitle>
+                          <DialogTitle className="text-white">Guardar Filtros Atuais</DialogTitle>
                         </DialogHeader>
                         <div className="space-y-4">
                           <div>
@@ -2192,7 +2292,7 @@ export default function MTGCollectionManager() {
                               <strong>Tipo:</strong> {collectionType || "Todos"}
                             </p>
                             <p>
-                              <strong>Busca:</strong> {searchQuery || "Nenhuma"}
+                              <strong>Procurar:</strong> {searchQuery || "Nenhuma"}
                             </p>
                             <p>
                               <strong>Filtros ativos:</strong>{" "}
@@ -2216,7 +2316,7 @@ export default function MTGCollectionManager() {
                               Cancelar
                             </Button>
                             <Button onClick={saveCurrentFilters} className="bg-blue-600 hover:bg-blue-700 text-white">
-                              Salvar
+                              Guardar
                             </Button>
                           </div>
                         </div>
@@ -2237,11 +2337,11 @@ export default function MTGCollectionManager() {
                       </DialogTrigger>
                       <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
                         <DialogHeader>
-                          <DialogTitle className="text-white">Filtros Salvos</DialogTitle>
+                          <DialogTitle className="text-white">Filtros Guardados</DialogTitle>
                         </DialogHeader>
                         <div className="space-y-3 max-h-96 overflow-y-auto">
                           {savedFilters.length === 0 ? (
-                            <p className="text-gray-400 text-center py-4">Nenhum filtro salvo ainda.</p>
+                            <p className="text-gray-400 text-center py-4">Nenhum filtro guardado ainda.</p>
                           ) : (
                             savedFilters.map((filter) => (
                               <div key={filter.id} className="bg-gray-800 p-4 rounded-lg border border-gray-600">
@@ -2250,11 +2350,11 @@ export default function MTGCollectionManager() {
                                     <h3 className="text-white font-medium mb-1">{filter.name}</h3>
                                     <p className="text-sm text-gray-400 mb-2">
                                       <strong>Tipo:</strong> {filter.collectionType} •<strong> Criado:</strong>{" "}
-                                      {new Date(filter.createdAt).toLocaleDateString("pt-BR")}
+                                      {new Date(filter.createdAt).toLocaleDateString("pt-PT")}
                                     </p>
                                     <div className="text-xs text-gray-500">
                                       {filter.filters.searchQuery && (
-                                        <span>Busca: "{filter.filters.searchQuery}" • </span>
+                                        <span>Procurar: "{filter.filters.searchQuery}" • </span>
                                       )}
                                       {filter.filters.ownershipFilter !== "all" && (
                                         <span>Posse: {filter.filters.ownershipFilter} • </span>
@@ -2303,7 +2403,7 @@ export default function MTGCollectionManager() {
                 <Card className="bg-gray-800/90 border-gray-600 backdrop-blur-sm">
                   <CardContent className="p-6">
                     <div className="space-y-6">
-                      {/* Color Filters */}
+                      {/* Filtros de cor */}
                       <div>
                         <label className="text-sm font-semibold text-white mb-3 block">Filtro por Cores</label>
                         <div className="flex gap-2 justify-center flex-wrap">
@@ -2332,7 +2432,7 @@ export default function MTGCollectionManager() {
                         </div>
                       </div>
 
-                      {/* Collection Type Filter */}
+                      {/* Filtro de tipo de coleção */}
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
                           <label className="text-sm font-medium text-white mb-2 block">Tipo de Coleção</label>
@@ -2486,7 +2586,7 @@ export default function MTGCollectionManager() {
                 </Card>
               )}
 
-              {/* Loading State */}
+              {/* Estado de Carregamento */}
               {(loading || isLoadingCards) && (
                 <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                   <CardContent className="p-8 text-center">
@@ -2505,10 +2605,10 @@ export default function MTGCollectionManager() {
                 </Card>
               )}
 
-              {/* Two Column Layout */}
+              {/* Layout de Duas Colunas */}
               {!loading && !isLoadingCards && allCards.length > 0 && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  {/* Left Column - All Cards */}
+                  {/* Coluna Esquerda - Todas as Cartas */}
                   <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
@@ -2539,7 +2639,7 @@ export default function MTGCollectionManager() {
                       {filteredCards.length > 0 ? (
                         <div className="space-y-4">
                           {textView ? (
-                            // Text View
+                            // Vista de Texto
                             <div className="space-y-2">
                               {visibleCards.map((card) => {
                                 const quantityInCollection = getCardQuantityInCollection(card.id, false)
@@ -2637,7 +2737,7 @@ export default function MTGCollectionManager() {
                               })}
                             </div>
                           ) : (
-                            // Grid View
+                            // Vista de Grelha
                             <div className="grid grid-cols-3 gap-2">
   {visibleCards.map((card) => {
     const quantityInCollection = getCardQuantityInCollection(card.id, false)
@@ -2673,32 +2773,30 @@ export default function MTGCollectionManager() {
           )}
         </div>
         
-        {/* Área dos botões - apenas no canto inferior direito */}
-        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <div className="flex flex-col gap-1">
-            <Button
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                addCardToCollection(card, 1, "Near Mint", false)
-              }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
-              title="Adicionar Normal"
-            >
-              <Plus className="w-3 h-3" />
-            </Button>
-            <Button
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                addCardToCollection(card, 1, "Near Mint", true)
-              }}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white p-1 h-6 w-6"
-              title="Adicionar Foil"
-            >
-              <Plus className="w-3 h-3" />
-            </Button>
-          </div>
+        {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
+        <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              addCardToCollection(card, 1, "Near Mint", false)
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+            title="Adicionar Normal"
+          >
+            <Plus className="w-3 h-3" />
+          </Button>
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              addCardToCollection(card, 1, "Near Mint", true)
+            }}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white p-1 h-6 w-6"
+            title="Adicionar Foil"
+          >
+            <Plus className="w-3 h-3" />
+          </Button>
         </div>
       </div>
     )
@@ -2706,7 +2804,7 @@ export default function MTGCollectionManager() {
 </div>
                           )}
 
-                          {/* Load More Button */}
+                          {/* Botão Carregar Mais */}
                           {visibleCount < filteredCards.length && (
                             <div className="text-center pt-4">
                               <Button
@@ -2726,12 +2824,12 @@ export default function MTGCollectionManager() {
                     </CardContent>
                   </Card>
 
-                  {/* Right Column - My Collection */}
+                  {/* Coluna Direita - A Minha Coleção */}
                   <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-white text-xl">
-                          Minha Coleção ({currentCollection.cards.length})
+                          A Minha Coleção ({currentCollection.cards.length})
                         </CardTitle>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="border-emerald-500 text-emerald-400">
@@ -2745,7 +2843,7 @@ export default function MTGCollectionManager() {
                       {currentCollection.cards.length > 0 ? (
                         <div className="space-y-4">
                           {textView ? (
-                            // Text View
+                            // Vista de Texto
                             <div className="space-y-2">
                               {currentCollection.cards
                                 .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
@@ -2842,7 +2940,7 @@ export default function MTGCollectionManager() {
                                 ))}
                             </div>
                           ) : (
-                            // Grid View
+                            // Vista de Grelha
                             <div className={`grid grid-cols-${currentColumns} gap-2`}>
   {currentCollection.cards
     .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
@@ -2872,37 +2970,34 @@ export default function MTGCollectionManager() {
           )}
         </div>
         
-        {/* Área dos botões - apenas no canto inferior direito */}
-        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <div className="flex flex-col gap-1">
-            <Button
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                addCardToCollection(
-                  collectionCard.card,
-                  1,
-                  collectionCard.condition,
-                  collectionCard.foil,
-                )
-              }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
-              title="Adicionar"
-            >
-              <Plus className="w-3 h-3" />
-            </Button>
-            <Button
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
-              }}
-              className="bg-red-600 hover:bg-red-700 text-white p-1 h-6 w-6"
-              title="Remover"
-            >
-              <Minus className="w-3 h-3" />
-            </Button>
-          </div>
+        {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
+        <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              addCardToCollection(
+                collectionCard.card,
+                1,
+                collectionCard.condition,
+                collectionCard.foil,
+              )
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+            title="Adicionar"
+          >
+            <Plus className="w-3 h-3" />
+          </Button>
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              removeCardFromCollection(collectionCard.card.id, collectionCard.foil, 1)
+            }}
+            className="bg-red-600 hover:bg-red-700 text-white p-1"
+          >
+            <Minus className="w-3 h-3" />
+          </Button>
         </div>
       </div>
     ))}
@@ -2911,7 +3006,7 @@ export default function MTGCollectionManager() {
                         </div>
                       ) : (
                         <div className="text-center py-8">
-                          <p className="text-gray-400 text-lg mb-2">Sua coleção está vazia</p>
+                          <p className="text-gray-400 text-lg mb-2">A sua coleção está vazia</p>
                           <p className="text-gray-500 text-sm">
                             Use os botões <Plus className="w-4 h-4 inline mx-1" /> na coluna da esquerda para adicionar
                             cartas
@@ -2923,7 +3018,7 @@ export default function MTGCollectionManager() {
                 </div>
               )}
 
-              {/* No Cards Loaded */}
+              {/* Nenhuma carta carregada */}
               {!loading && !isLoadingCards && allCards.length === 0 && (
                 <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                   <CardContent className="p-8 text-center">
@@ -2936,12 +3031,12 @@ export default function MTGCollectionManager() {
               )}
             </TabsContent>
 
-            {/* Dashboard Tab */}
+            {/* Separador do Painel de controlo */}
             <TabsContent value="dashboard" className="space-y-6">
               {currentCollection.cards.length === 0 ? (
                 <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                   <CardContent className="p-8 text-center">
-                    <p className="text-gray-400 text-lg mb-4">Monte sua coleção para ver estatísticas detalhadas.</p>
+                    <p className="text-gray-400 text-lg mb-4">Monte a sua coleção para ver estatísticas detalhadas.</p>
                     <Button
                       variant="outline"
                       onClick={() => setActiveTab("collection")}
@@ -2953,7 +3048,7 @@ export default function MTGCollectionManager() {
                 </Card>
               ) : (
                 <>
-                  {/* Overview Stats */}
+                  {/* Estatísticas gerais */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                       <CardContent className="p-6 text-center">
@@ -3001,7 +3096,7 @@ export default function MTGCollectionManager() {
                     </Card>
                   </div>
 
-                  {/* Charts */}
+                  {/* Gráficos */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <SimpleBarChart
                       data={dashboardStats.colorDistribution}
@@ -3037,17 +3132,17 @@ export default function MTGCollectionManager() {
               )}
             </TabsContent>
 
-            {/* Deck Builder Tab */}
+            {/* Separador do Construtor de Baralhos */}
             <TabsContent value="deckbuilder" className="space-y-6">
-              {/* Deck Header */}
+              {/* Cabeçalho do Baralho */}
               <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                 <CardContent className="p-6">
                   <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Left side - Deck Info */}
+                    {/* Lado esquerdo - Informações do Baralho */}
                     <div className="flex-1 space-y-4">
                       <div className="flex items-center gap-4">
                         <Input
-                          placeholder="Nome do deck"
+                          placeholder="Nome do baralho"
                           value={currentDeck.name}
                           onChange={(e) =>
                             setCurrentDeck((prev) => ({
@@ -3072,7 +3167,7 @@ export default function MTGCollectionManager() {
                       </div>
                     </div>
 
-                    {/* Right side - Actions */}
+                    {/* Lado direito - Ações */}
                     <div className="flex flex-wrap gap-2">
                       <Select
                         value={currentDeck.format}
@@ -3085,22 +3180,22 @@ export default function MTGCollectionManager() {
                         </SelectTrigger>
                         <SelectContent className="bg-gray-800 border-gray-600">
                           <SelectItem value="standard" className="text-white">
-                            Standard
+                            Padrão
                           </SelectItem>
                           <SelectItem value="modern" className="text-white">
-                            Modern
+                            Moderno
                           </SelectItem>
                           <SelectItem value="legacy" className="text-white">
-                            Legacy
+                            Legado
                           </SelectItem>
                           <SelectItem value="vintage" className="text-white">
                             Vintage
                           </SelectItem>
                           <SelectItem value="commander" className="text-white">
-                            Commander
+                            Comandante
                           </SelectItem>
                           <SelectItem value="pioneer" className="text-white">
-                            Pioneer
+                            Pioneiro
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -3122,16 +3217,16 @@ export default function MTGCollectionManager() {
                             className="bg-blue-600 border-blue-500 text-white hover:bg-blue-700"
                           >
                             <Save className="w-4 h-4 mr-2" />
-                            Salvar
+                            Guardar
                           </Button>
                         </DialogTrigger>
                         <DialogContent className="bg-gray-900 border-gray-700">
                           <DialogHeader>
-                            <DialogTitle className="text-white">Salvar Deck</DialogTitle>
+                            <DialogTitle className="text-white">Guardar Baralho</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-4">
                             <div>
-                              <label className="text-sm font-medium text-white mb-2 block">Nome do Deck</label>
+                              <label className="text-sm font-medium text-white mb-2 block">Nome do Baralho</label>
                               <Input
                                 value={currentDeck.name}
                                 onChange={(e) => setCurrentDeck((prev) => ({ ...prev, name: e.target.value }))}
@@ -3156,7 +3251,7 @@ export default function MTGCollectionManager() {
                                 Cancelar
                               </Button>
                               <Button onClick={saveDeck} className="bg-blue-600 hover:bg-blue-700 text-white">
-                                Salvar
+                                Guardar
                               </Button>
                             </div>
                           </div>
@@ -3177,11 +3272,11 @@ export default function MTGCollectionManager() {
                         </DialogTrigger>
                         <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
                           <DialogHeader>
-                            <DialogTitle className="text-white">Decks Salvos</DialogTitle>
+                            <DialogTitle className="text-white">Baralhos Guardados</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-3 max-h-96 overflow-y-auto">
                             {savedDecks.length === 0 ? (
-                              <p className="text-gray-400 text-center py-4">Nenhum deck salvo ainda.</p>
+                              <p className="text-gray-400 text-center py-4">Nenhum baralho guardado ainda.</p>
                             ) : (
                               savedDecks.map((deck) => (
                                 <div key={deck.id} className="bg-gray-800 p-4 rounded-lg border border-gray-600">
@@ -3191,8 +3286,8 @@ export default function MTGCollectionManager() {
                                       <p className="text-sm text-gray-400 mb-2">
                                         <strong>Formato:</strong> {deck.format.toUpperCase()} • <strong>Cartas:</strong>{" "}
                                         {deck.mainboard.reduce((sum, card) => sum + card.quantity, 0)} •{" "}
-                                        <strong>Criado:</strong> {new Date(deck.createdAt).toLocaleDateString("pt-BR")}
-                                      </p>
+                                        <strong>Criado:</strong> {new Date(deck.createdAt).toLocaleDateString("pt-PT")}
+                                                                              </p>
                                       {deck.description && <p className="text-xs text-gray-500">{deck.description}</p>}
                                     </div>
                                     <div className="flex gap-2 ml-4">
@@ -3233,12 +3328,12 @@ export default function MTGCollectionManager() {
                         </DialogTrigger>
                         <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
                           <DialogHeader>
-                            <DialogTitle className="text-white">Importar Lista de Deck</DialogTitle>
+                            <DialogTitle className="text-white">Importar Lista de Baralho</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-4">
                             <div>
                               <label className="text-sm font-medium text-white mb-2 block">
-                                Cole sua lista de deck aqui:
+                                Cole a sua lista de baralho aqui:
                               </label>
                               <Textarea
                                 placeholder={`Exemplo:
@@ -3257,7 +3352,7 @@ export default function MTGCollectionManager() {
                             </div>
                             <div className="text-xs text-gray-400">
                               <p>
-                                <strong>Formato aceito:</strong> Quantidade Nome da Carta (ex: "4 Lightning Bolt")
+                                <strong>Formato aceite:</strong> Quantidade Nome da Carta (ex: "4 Lightning Bolt")
                               </p>
                               <p>Use "// Sideboard" ou "Sideboard:" para separar o sideboard</p>
                             </div>
@@ -3286,8 +3381,10 @@ export default function MTGCollectionManager() {
                         size="sm"
                         onClick={() => {
                           const deckText = exportDeckToText()
+                          // Substitua 'alert' por um modal personalizado ou UI de notificação
+                          // console.log("Lista do baralho copiada para a área de transferência!");
                           navigator.clipboard.writeText(deckText)
-                          alert("Lista do deck copiada para a área de transferência!")
+                          console.log("Lista do baralho copiada para a área de transferência!")
                         }}
                         className="bg-orange-600 border-orange-500 text-white hover:bg-orange-700"
                         disabled={currentDeck.mainboard.length === 0}
@@ -3300,20 +3397,20 @@ export default function MTGCollectionManager() {
                 </CardContent>
               </Card>
 
-              {/* Deck Search */}
+              {/* Procurar Baralho */}
               <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                 <CardContent className="p-4">
                   <div className="flex flex-wrap gap-4 items-center">
                     <div className="flex-1 min-w-48">
                       <Input
-                        placeholder="Buscar cartas para adicionar ao deck..."
+                        placeholder="Procurar cartas para adicionar ao baralho..."
                         value={deckSearchQuery}
                         onChange={(e) => setDeckSearchQuery(e.target.value)}
                         className={inputClasses}
                       />
                     </div>
 
-                    {/* Filtros básicos para deck builder */}
+                    {/* Filtros básicos para construtor de baralhos */}
                     <Select value={rarityFilter} onValueChange={setRarityFilter}>
                       <SelectTrigger className={`w-32 ${selectClasses}`}>
                         <SelectValue placeholder="Raridade" />
@@ -3345,7 +3442,7 @@ export default function MTGCollectionManager() {
                     />
                   </div>
 
-                  {/* Color Filters for Deck Builder */}
+                  {/* Filtros de cor para construtor de baralhos */}
                   <div className="flex gap-2 justify-center flex-wrap mt-4">
                     {[
                       { color: "W", name: "Branco" },
@@ -3373,22 +3470,10 @@ export default function MTGCollectionManager() {
                 </CardContent>
               </Card>
 
-              {/* Loading State for Deck Builder */}
-              {isSearchingCards && (
-                <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
-                  <CardContent className="p-8 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-                      <p className="text-white text-lg">{loadingMessage}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Three Column Layout for Deck Builder */}
+              {/* Layout de Três Colunas para o Construtor de Baralhos */}
               {!isSearchingCards && deckBuilderCards.length > 0 && (
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                  {/* Left Column - Available Cards */}
+                  {/* Coluna Esquerda - Cartas Disponíveis */}
                   <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
@@ -3409,7 +3494,7 @@ export default function MTGCollectionManager() {
                       {filteredDeckCards.length > 0 ? (
                         <div className="space-y-2">
                           {textView ? (
-                            // Lista View (atual)
+                            // Vista de Lista (atual)
                             <div className="space-y-2">
                               {visibleDeckCards.map((card) => (
                                 <div
@@ -3451,7 +3536,7 @@ export default function MTGCollectionManager() {
                                       size="sm"
                                       onClick={() => addCardToDeck(card, 1, false)}
                                       className="w-6 h-6 p-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                                      title="Adicionar ao deck principal"
+                                      title="Adicionar ao baralho principal"
                                     >
                                       <Plus className="w-3 h-3" />
                                     </Button>
@@ -3468,7 +3553,7 @@ export default function MTGCollectionManager() {
                               ))}
                             </div>
                           ) : (
-                            // Grid View (novo)
+                            // Vista de Grelha (nova)
                             <div className="grid grid-cols-2 gap-2">
                               {visibleDeckCards.map((card) => (
                                 <div
@@ -3486,7 +3571,7 @@ export default function MTGCollectionManager() {
                                         setSelectedCard(card)
                                       }}
                                     />
-                                    {/* Overlay com informações da carta */}
+                                    {/* Sobreposição com informações da carta */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-lg">
                                       <p className="text-white text-xs font-medium truncate">{card.name}</p>
                                       <div className="flex items-center justify-between">
@@ -3512,39 +3597,37 @@ export default function MTGCollectionManager() {
                                     </div>
                                   </div>
                                   
-                                  {/* Área dos botões - apenas no canto inferior direito */}
-                                  <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                    <div className="flex flex-col gap-1">
-                                      <Button
-                                        size="sm"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          addCardToDeck(card, 1, false)
-                                        }}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
-                                        title="Adicionar ao deck principal"
-                                      >
-                                        <Plus className="w-3 h-3" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          addCardToDeck(card, 1, true)
-                                        }}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white p-1 h-6 w-6"
-                                        title="Adicionar ao sideboard"
-                                      >
-                                        <Plus className="w-3 h-3" />
-                                      </Button>
-                                    </div>
+                                  {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
+                                  <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+                                    <Button
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        addCardToDeck(card, 1, false)
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+                                      title="Adicionar ao baralho principal"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        addCardToDeck(card, 1, true)
+                                      }}
+                                      className="bg-blue-600 hover:bg-blue-700 text-white p-1 h-6 w-6"
+                                      title="Adicionar ao sideboard"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </Button>
                                   </div>
                                 </div>
                               ))}
                             </div>
                           )}
 
-                          {/* Load More Button */}
+                          {/* Botão Carregar Mais */}
                           {visibleCount < filteredDeckCards.length && (
                             <div className="text-center pt-4">
                               <Button
@@ -3564,11 +3647,11 @@ export default function MTGCollectionManager() {
                     </CardContent>
                   </Card>
 
-                  {/* Middle Column - Mainboard */}
+                  {/* Coluna do Meio - Baralho Principal */}
                   <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
-                        <CardTitle className="text-white text-lg">Deck Principal ({deckStats.totalCards})</CardTitle>
+                        <CardTitle className="text-white text-lg">Baralho Principal ({deckStats.totalCards})</CardTitle>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="border-emerald-500 text-emerald-400">
                             {currentDeck.format === "commander" ? "99 cartas" : "60 cartas"}
@@ -3588,7 +3671,7 @@ export default function MTGCollectionManager() {
                       {currentDeck.mainboard.length > 0 ? (
                         <div className="space-y-2">
                           {textView ? (
-                            // Lista View
+                            // Vista de Lista
                             <div className="space-y-2">
                               {currentDeck.mainboard
                                 .sort((a, b) => a.card.name.localeCompare(b.card.name))
@@ -3652,7 +3735,7 @@ export default function MTGCollectionManager() {
                                 ))}
                             </div>
                           ) : (
-                            // Grid View
+                            // Vista de Grelha
                             <div className="grid grid-cols-3 gap-2">
                               {currentDeck.mainboard
                                 .sort((a, b) => a.card.name.localeCompare(b.card.name))
@@ -3672,38 +3755,35 @@ export default function MTGCollectionManager() {
                                       <div className="absolute top-1 left-1 bg-emerald-600 text-white rounded-full px-2 py-1 text-xs font-bold">
                                         {deckCard.quantity}
                                       </div>
-                                      {/* Overlay com nome da carta */}
+                                      {/* Sobreposição com nome da carta */}
                                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1 rounded-b-lg">
                                         <p className="text-white text-xs font-medium truncate">{deckCard.card.name}</p>
                                       </div>
                                     </div>
                                     
-                                    {/* Área dos botões - apenas no canto inferior direito */}
-                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                      <div className="flex flex-col gap-1">
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            addCardToDeck(deckCard.card, 1, false)
-                                          }}
-                                          className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
-                                          title="Adicionar"
-                                        >
-                                          <Plus className="w-3 h-3" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            removeCardFromDeck(deckCard.card.id, 1, false)
-                                          }}
-                                          className="bg-red-600 hover:bg-red-700 text-white p-1 h-6 w-6"
-                                          title="Remover"
-                                        >
-                                          <Minus className="w-3 h-3" />
-                                        </Button>
-                                      </div>
+                                    {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
+                                    <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          addCardToDeck(deckCard.card, 1, false)
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white p-1 h-6 w-6"
+                                        title="Adicionar"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          removeCardFromDeck(deckCard.card.id, 1, false)
+                                        }}
+                                        className="bg-red-600 hover:bg-red-700 text-white p-1"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </Button>
                                     </div>
                                   </div>
                                 ))}
@@ -3712,7 +3792,7 @@ export default function MTGCollectionManager() {
                         </div>
                       ) : (
                         <div className="text-center py-8">
-                          <p className="text-gray-400 text-lg mb-2">Deck principal vazio</p>
+                          <p className="text-gray-400 text-lg mb-2">O seu baralho principal está vazio</p>
                           <p className="text-gray-500 text-sm">
                             Use os botões <Plus className="w-4 h-4 inline mx-1" /> verdes para adicionar cartas
                           </p>
@@ -3721,7 +3801,7 @@ export default function MTGCollectionManager() {
                     </CardContent>
                   </Card>
 
-                  {/* Right Column - Sideboard */}
+                  {/* Coluna Direita - Sideboard */}
                   <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
@@ -3745,7 +3825,7 @@ export default function MTGCollectionManager() {
                       {currentDeck.sideboard.length > 0 ? (
                         <div className="space-y-2">
                           {textView ? (
-                            // Lista View
+                            // Vista de Lista
                             <div className="space-y-2">
                               {currentDeck.sideboard
                                 .sort((a, b) => a.card.name.localeCompare(b.card.name))
@@ -3809,7 +3889,7 @@ export default function MTGCollectionManager() {
                                 ))}
                             </div>
                           ) : (
-                            // Grid View
+                            // Vista de Grelha
                             <div className="grid grid-cols-3 gap-2">
                               {currentDeck.sideboard
                                 .sort((a, b) => a.card.name.localeCompare(b.card.name))
@@ -3829,36 +3909,34 @@ export default function MTGCollectionManager() {
                                       <div className="absolute top-1 left-1 bg-blue-600 text-white rounded-full px-2 py-1 text-xs font-bold">
                                         {deckCard.quantity}
                                       </div>
-                                      {/* Overlay com nome da carta */}
+                                      {/* Sobreposição com nome da carta */}
                                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1 rounded-b-lg">
                                         <p className="text-white text-xs font-medium truncate">{deckCard.card.name}</p>
                                       </div>
                                     </div>
                                     
-                                    {/* Área dos botões - apenas no canto inferior direito */}
-                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                      <div className="flex flex-col gap-1">
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            removeCardFromDeck(deckCard.card.id, 1, true)
-                                          }}
-                                          className="bg-red-600 hover:bg-red-700 text-white p-1"
-                                        >
-                                          <Minus className="w-3 h-3" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            addCardToDeck(deckCard.card, 1, true)
-                                          }}
-                                          className="bg-blue-600 hover:bg-blue-700 text-white p-1"
-                                        >
-                                          <Plus className="w-3 h-3" />
-                                        </Button>
-                                      </div>
+                                    {/* Botões de adicionar/remover, visíveis ao passar o rato ou em ecrãs pequenos */}
+                                    <div className="absolute bottom-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 md:opacity-100 md:relative md:bottom-auto md:right-auto md:mt-2 md:group-hover:opacity-100">
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          removeCardFromDeck(deckCard.card.id, 1, true)
+                                        }}
+                                        className="bg-red-600 hover:bg-red-700 text-white p-1"
+                                      >
+                                        <Minus className="w-3 h-3" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          addCardToDeck(deckCard.card, 1, true)
+                                        }}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white p-1"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </Button>
                                     </div>
                                   </div>
                                 ))}
@@ -3867,7 +3945,7 @@ export default function MTGCollectionManager() {
                         </div>
                       ) : (
                         <div className="text-center py-8">
-                          <p className="text-gray-400 text-lg mb-2">Sideboard vazio</p>
+                          <p className="text-gray-400 text-lg mb-2">O seu sideboard está vazio</p>
                           <p className="text-gray-500 text-sm">
                             Use os botões <Plus className="w-4 h-4 inline mx-1" /> azuis para adicionar cartas
                           </p>
@@ -3878,11 +3956,11 @@ export default function MTGCollectionManager() {
                 </div>
               )}
 
-              {/* No Cards Loaded for Deck Builder */}
+              {/* Nenhuma carta carregada para o construtor de baralhos */}
               {!isSearchingCards && deckBuilderCards.length === 0 && (
                 <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
                   <CardContent className="p-8 text-center">
-                    <p className="text-gray-400 text-lg mb-4">Carregando cartas para o construtor de deck...</p>
+                    <p className="text-gray-400 text-lg mb-4">A carregar cartas para o construtor de baralhos...</p>
                     <Button onClick={fetchDeckBuilderCards} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                       Carregar Cartas
                     </Button>
@@ -3890,156 +3968,387 @@ export default function MTGCollectionManager() {
                 </Card>
               )}
             </TabsContent>
-          </Tabs>
 
-          {/* Card Detail Modal */}
-          <Dialog open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
-            <DialogContent className="bg-gray-900 border-gray-700 max-w-4xl max-h-[90vh] overflow-y-auto">
-              {selectedCard && (
-                <>
-                  <DialogHeader>
-                    <DialogTitle className="text-white text-2xl">{selectedCard.name}</DialogTitle>
-                  </DialogHeader>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Left side - Card Image */}
-                    <div className="space-y-4">
-                      <img
-                        src={getOptimizedImageUrl(selectedCard) || "/placeholder.svg"}
-                        alt={selectedCard.name}
-                        className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
-                      />
+            
+<TabsContent value="rules" className="space-y-6">
+  {/* Cabeçalho das Regras */}
+  <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
+    <CardHeader>
+      <CardTitle className="text-white text-xl">Consulta de Regras</CardTitle>
+    </CardHeader>
+    <CardContent className="space-y-4">
+      {/* Seleção de Fonte */}
+      <div>
+        <label className="text-sm font-medium text-white mb-2 block">Fonte das Cartas</label>
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant={rulesSource === "search" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setRulesSource("search")}
+            className={rulesSource === "search" 
+              ? "bg-emerald-600 text-white" 
+              : "bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+            }
+          >
+            Procurar Cartas
+          </Button>
+          <Button
+            variant={rulesSource === "collection" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setRulesSource("collection")}
+            className={rulesSource === "collection" 
+              ? "bg-emerald-600 text-white" 
+              : "bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+            }
+            disabled={savedCollections.length === 0}
+          >
+            Da Coleção ({savedCollections.length})
+          </Button>
+          <Button
+            variant={rulesSource === "deck" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setRulesSource("deck")}
+            className={rulesSource === "deck" 
+              ? "bg-emerald-600 text-white" 
+              : "bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+            }
+            disabled={savedDecks.length === 0}
+          >
+            Do Baralho ({savedDecks.length})
+          </Button>
+        </div>
+      </div>
 
-                      {/* Action buttons */}
-                      <div className="flex gap-2 justify-center">
-                        <Button
-                          onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", false)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+      {/* Seleção de Coleção/Baralho */}
+      {rulesSource === "collection" && (
+        <div>
+          <label className="text-sm font-medium text-white mb-2 block">Selecionar Coleção</label>
+          <Select value={selectedCollectionForRules} onValueChange={setSelectedCollectionForRules}>
+            <SelectTrigger className={selectClasses}>
+              <SelectValue placeholder="Escolha uma coleção" />
+            </SelectTrigger>
+            <SelectContent className="bg-gray-800 border-gray-600">
+              {savedCollections.map((collection) => (
+                <SelectItem key={collection.id} value={collection.id} className="text-white">
+                  {collection.name} ({collection.cards.length} cartas)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {rulesSource === "deck" && (
+        <div>
+          <label className="text-sm font-medium text-white mb-2 block">Selecionar Baralho</label>
+          <Select value={selectedDeckForRules} onValueChange={setSelectedDeckForRules}>
+            <SelectTrigger className={selectClasses}>
+              <SelectValue placeholder="Escolha um baralho" />
+            </SelectTrigger>
+            <SelectContent className="bg-gray-800 border-gray-600">
+              {savedDecks.map((deck) => (
+                <SelectItem key={deck.id} value={deck.id} className="text-white">
+                  {deck.name} ({deck.mainboard.length + deck.sideboard.length} cartas)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Campo de pesquisa */}
+      {rulesSource === "search" && (
+        <div>
+          <label className="text-sm font-medium text-white mb-2 block">Procurar Carta</label>
+          <Input
+            placeholder="Digite o nome da carta..."
+            value={rulesSearchQuery}
+            onChange={(e) => setRulesSearchQuery(e.target.value)}
+            className={inputClasses}
+          />
+        </div>
+      )}
+    </CardContent>
+  </Card>
+
+  {/* Layout de Duas Colunas */}
+  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    {/* Coluna Esquerda - Cartas Disponíveis */}
+    <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-white text-lg">
+          {rulesSource === "search" ? "Resultados da Procura" : 
+           rulesSource === "collection" ? "Cartas da Coleção" : "Cartas do Baralho"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="max-h-[600px] overflow-y-auto">
+        {rulesSource === "search" ? (
+          // Resultados da procura
+          <div className="space-y-2">
+            {rulesSearchQuery.length >= 2 ? (
+              allCards
+                .filter(card => normalize(card.name).includes(normalize(rulesSearchQuery)))
+                .slice(0, 20)
+                .map((card) => (
+                  <div
+                    key={card.id}
+                    className="flex items-center gap-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer"
+                    onClick={() => {
+                      setSelectedRulesCard(card)
+                      fetchCardRulings(card)
+                    }}
+                  >
+                    <img
+                      src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
+                      alt={card.name}
+                      className="w-12 h-16 rounded object-cover"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{card.name}</p>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="text-xs"
+                          dangerouslySetInnerHTML={{ __html: formatManaSymbols(card.mana_cost || "") }}
+                        />
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${
+                            card.rarity === "mythic"
+                              ? "border-orange-500 text-orange-400"
+                              : card.rarity === "rare"
+                                ? "border-yellow-500 text-yellow-400"
+                                : card.rarity === "uncommon"
+                                  ? "border-gray-400 text-gray-300"
+                                  : "border-gray-600 text-gray-400"
+                          }`}
                         >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Adicionar Normal
-                        </Button>
-                        <Button
-                          onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", true)}
-                          className="bg-yellow-600 hover:bg-yellow-700 text-white"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Adicionar Foil
-                        </Button>
+                          {card.rarity.charAt(0).toUpperCase()}
+                        </Badge>
                       </div>
-
-                      {activeTab === "deckbuilder" && (
-                        <div className="flex gap-2 justify-center">
-                          <Button
-                            onClick={() => addCardToDeck(selectedCard, 1, false)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                          >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Deck Principal
-                          </Button>
-                          <Button
-                            onClick={() => addCardToDeck(selectedCard, 1, true)}
-                            className="bg-purple-600 hover:bg-purple-700 text-white"
-                          >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Sideboard
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Right side - Card Details */}
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-400">Custo de Mana:</span>
-                          <div
-                            className="text-white"
-                            dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.mana_cost || "N/A") }}
-                          />
-                        </div>
-                        <div>
-                          <span className="text-gray-400">CMC:</span>
-                          <p className="text-white">{selectedCard.cmc}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Tipo:</span>
-                          <p className="text-white">{selectedCard.type_line}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Raridade:</span>
-                          <Badge
-                            variant="outline"
-                            className={`${
-                              selectedCard.rarity === "mythic"
-                                ? "border-orange-500 text-orange-400"
-                                : selectedCard.rarity === "rare"
-                                  ? "border-yellow-500 text-yellow-400"
-                                  : selectedCard.rarity === "uncommon"
-                                    ? "border-gray-400 text-gray-300"
-                                    : "border-gray-600 text-gray-400"
-                            }`}
-                          >
-                            {selectedCard.rarity.charAt(0).toUpperCase() + selectedCard.rarity.slice(1)}
-                          </Badge>
-                        </div>
-                        {selectedCard.power && (
-                          <div>
-                            <span className="text-gray-400">Poder/Resistência:</span>
-                            <p className="text-white">
-                              {selectedCard.power}/{selectedCard.toughness}
-                            </p>
-                          </div>
-                        )}
-                        <div>
-                          <span className="text-gray-400">Edição:</span>
-                          <p className="text-white">{selectedCard.set_name}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Artista:</span>
-                          <p className="text-white">{selectedCard.artist}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Preço Estimado:</span>
-                          <p className="text-green-400 font-medium">R$ {getEstimatedPrice(selectedCard).toFixed(2)}</p>
-                        </div>
-                      </div>
-
-                      {selectedCard.oracle_text && (
-                        <div>
-                          <span className="text-gray-400 block mb-2">Texto do Oráculo:</span>
-                          <div
-                            className="text-white bg-gray-800 p-3 rounded-lg text-sm leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.oracle_text) }}
-                          />
-                        </div>
-                      )}
-
-                      {/* Collection Status */}
-                      <div className="bg-gray-800 p-4 rounded-lg">
-                        <h4 className="text-white font-medium mb-2">Status na Coleção</h4>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="text-gray-400">Normal:</span>
-                            <p className="text-white">{getCardQuantityInCollection(selectedCard.id, false)} cópias</p>
-                          </div>
-                          <div>
-                            <span className="text-gray-400">Foil:</span>
-                            <p className="text-white">{getCardQuantityInCollection(selectedCard.id, true)} cópias</p>
-                          </div>
-                        </div>
-                      </div>
+                      <p className="text-gray-400 text-xs truncate">{card.set_name}</p>
                     </div>
                   </div>
-                </>
-              )}
-            </DialogContent>
-          </Dialog>
+                ))
+            ) : (
+              <p className="text-gray-400 text-center py-8">
+                Digite pelo menos 2 caracteres para procurar cartas
+              </p>
+            )}
+          </div>
+        ) : (
+          // Cartas da coleção/baralho
+          <div className="space-y-2">
+            {availableRulesCards.length > 0 ? (
+              availableRulesCards.map((card) => (
+                <div
+                  key={card.id}
+                  className="flex items-center gap-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    setSelectedRulesCard(card)
+                    fetchCardRulings(card)
+                  }}
+                >
+                  <img
+                    src={getOptimizedImageUrl(card, true) || "/placeholder.svg"}
+                    alt={card.name}
+                    className="w-12 h-16 rounded object-cover"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{card.name}</p>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="text-xs"
+                        dangerouslySetInnerHTML={{ __html: formatManaSymbols(card.mana_cost || "") }}
+                      />
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${
+                          card.rarity === "mythic"
+                            ? "border-orange-500 text-orange-400"
+                            : card.rarity === "rare"
+                              ? "border-yellow-500 text-yellow-400"
+                              : card.rarity === "uncommon"
+                                ? "border-gray-400 text-gray-300"
+                                : "border-gray-600 text-gray-400"
+                        }`}
+                      >
+                        {card.rarity.charAt(0).toUpperCase()}
+                      </Badge>
+                    </div>
+                    <p className="text-gray-400 text-xs truncate">{card.set_name}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-gray-400 text-center py-8">
+                {rulesSource === "collection" && !selectedCollectionForRules
+                  ? "Selecione uma coleção para ver as cartas disponíveis."
+                  : rulesSource === "deck" && !selectedDeckForRules
+                  ? "Selecione um baralho para ver as cartas disponíveis."
+                  : "Nenhuma carta disponível para esta fonte."}
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
 
-          {/* Login Dialog */}
+    {/* Coluna Direita - Regras da Carta */}
+    <Card className="bg-gray-800/70 border-gray-700 backdrop-blur-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-white text-lg">Regras da Carta</CardTitle>
+      </CardHeader>
+      <CardContent className="max-h-[600px] overflow-y-auto">
+        {isLoadingRulings ? (
+          <div className="text-center py-8 flex flex-col items-center gap-4">
+            <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+            <p className="text-white">A carregar regras...</p>
+          </div>
+        ) : selectedRulesCard ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4 p-4 bg-gray-700/30 rounded-lg">
+              <img
+                src={getOptimizedImageUrl(selectedRulesCard, false) || "/placeholder.svg"}
+                alt={selectedRulesCard.name}
+                className="w-24 h-auto rounded-lg shadow-md"
+              />
+              <div>
+                <h3 className="text-xl font-bold text-white">{selectedRulesCard.name}</h3>
+                <p className="text-gray-400 text-sm">{selectedRulesCard.type_line}</p>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-sm text-gray-300"
+                    dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedRulesCard.mana_cost || "") }}
+                  />
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${
+                      selectedRulesCard.rarity === "mythic"
+                        ? "border-orange-500 text-orange-400"
+                        : selectedRulesCard.rarity === "rare"
+                          ? "border-yellow-500 text-yellow-400"
+                          : selectedRulesCard.rarity === "uncommon"
+                            ? "border-gray-400 text-gray-300"
+                            : "border-gray-600 text-gray-400"
+                    }`}
+                  >
+                    {selectedRulesCard.rarity.charAt(0).toUpperCase()}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+            
+            {cardRulings.length > 0 ? (
+              <div className="space-y-3">
+                {cardRulings.map((ruling, index) => (
+                  <div key={index} className="bg-gray-800 p-3 rounded-lg border border-gray-700">
+                    <p className="text-gray-300 text-sm">{ruling.comment}</p>
+                    <p className="text-gray-500 text-xs mt-2">
+                      Fonte: {ruling.source} • Publicado em: {new Date(ruling.published_at).toLocaleDateString("pt-PT")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-400 text-center py-8">
+                Nenhuma regra específica encontrada para esta carta.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">
+            Selecione uma carta na coluna da esquerda para ver as suas regras.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  </div>
+</TabsContent>
+
+
+          {/* Diálogo de Detalhes da Carta */}
+          {selectedCard && (
+            <Dialog open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
+              <DialogContent className="max-w-4xl bg-gray-900 border-gray-700 p-0">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 flex justify-center items-center">
+                    {/* Imagem da carta de Magic: The Gathering (arte completa) */}
+                    <img
+                      src={getOptimizedImageUrl(selectedCard, false) || "/placeholder.svg"}
+                      alt={selectedCard.name}
+                      className="w-full h-auto rounded-lg shadow-lg max-w-sm"
+                    />
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <DialogHeader>
+                      <DialogTitle className="text-white text-2xl">
+                        {selectedCard.name}{" "}
+                        <span
+                          className="text-gray-400 text-sm"
+                          dangerouslySetInnerHTML={{ __html: formatManaSymbols(selectedCard.mana_cost || "") }}
+                        />
+                      </DialogTitle>
+                    </DialogHeader>
+                    <p className="text-gray-400 text-sm">{selectedCard.type_line}</p>
+                    <p className="text-white text-sm">{selectedCard.oracle_text}</p>
+                    {selectedCard.power && selectedCard.toughness && (
+                      <p className="text-gray-300">
+                        P/T: {selectedCard.power}/{selectedCard.toughness}
+                      </p>
+                    )}
+                    <p className="text-gray-300">Artista: {selectedCard.artist}</p>
+                    <p className="text-gray-300">Edição: {selectedCard.set_name}</p>
+                    <p className="text-gray-300">Raridade: {selectedCard.rarity}</p>
+                    <p className="text-gray-300">Lançamento: {selectedCard.released_at}</p>
+                    <p className="text-gray-300 font-bold">
+                      Valor Estimado: R$ {getEstimatedPrice(selectedCard).toFixed(2)}
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 pt-4">
+                      <Button
+                        size="sm"
+                        onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", false)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Adicionar à Coleção (Normal)
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => addCardToCollection(selectedCard, 1, "Near Mint", true)}
+                        className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Adicionar à Coleção (Foil)
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => addCardToDeck(selectedCard, 1, false)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Adicionar ao Baralho (Principal)
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => addCardToDeck(selectedCard, 1, true)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Adicionar ao Baralho (Sideboard)
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Diálogo de Login/Registo */}
           <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
-            <DialogContent className="bg-gray-900 border-gray-700">
+            <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
               <DialogHeader>
-                <DialogTitle className="text-white">{isRegistering ? "Criar Conta" : "Entrar"}</DialogTitle>
+                <DialogTitle className="text-white">{isRegistering ? "Registar" : "Login"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleLogin} className="space-y-4">
                 {isRegistering && (
@@ -4047,7 +4356,7 @@ export default function MTGCollectionManager() {
                     <label className="text-sm font-medium text-white mb-2 block">Nome Completo</label>
                     <Input
                       type="text"
-                      placeholder="Seu nome completo"
+                      placeholder="O seu nome completo"
                       value={loginForm.name}
                       onChange={(e) => setLoginForm((prev) => ({ ...prev, name: e.target.value }))}
                       className={inputClasses}
@@ -4056,10 +4365,10 @@ export default function MTGCollectionManager() {
                   </div>
                 )}
                 <div>
-                  <label className="text-sm font-medium text-white mb-2 block">Email</label>
+                  <label className="text-sm font-medium text-white mb-2 block">E-mail</label>
                   <Input
                     type="email"
-                    placeholder="seu@email.com"
+                    placeholder="o_seu@email.com"
                     value={loginForm.email}
                     onChange={(e) => setLoginForm((prev) => ({ ...prev, email: e.target.value }))}
                     className={inputClasses}
@@ -4067,10 +4376,10 @@ export default function MTGCollectionManager() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-white mb-2 block">Senha</label>
+                  <label className="text-sm font-medium text-white mb-2 block">Palavra-passe</label>
                   <Input
                     type="password"
-                    placeholder="Sua senha"
+                    placeholder="A sua palavra-passe"
                     value={loginForm.password}
                     onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
                     className={inputClasses}
@@ -4079,10 +4388,10 @@ export default function MTGCollectionManager() {
                 </div>
                 {isRegistering && (
                   <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Confirmar Senha</label>
+                    <label className="text-sm font-medium text-white mb-2 block">Confirmar Palavra-passe</label>
                     <Input
                       type="password"
-                      placeholder="Confirme sua senha"
+                      placeholder="Confirme a sua palavra-passe"
                       value={loginForm.confirmPassword}
                       onChange={(e) => setLoginForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
                       className={inputClasses}
@@ -4090,90 +4399,54 @@ export default function MTGCollectionManager() {
                     />
                   </div>
                 )}
-                <div className="flex gap-2 justify-between items-center">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={toggleAuthMode}
-                    className="text-emerald-400 hover:text-emerald-300"
-                  >
-                    {isRegistering ? "Já tem conta? Entrar" : "Não tem conta? Registrar"}
-                  </Button>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setShowLoginDialog(false)}
-                      className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={loginLoading}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                    >
-                      {loginLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                      ) : isRegistering ? (
-                        "Criar Conta"
-                      ) : (
-                        "Entrar"
-                      )}
-                    </Button>
-                  </div>
-                </div>
+                <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={loginLoading}>
+                  {loginLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : isRegistering ? (
+                    "Registar"
+                  ) : (
+                    "Entrar"
+                  )}
+                </Button>
+                <Button type="button" variant="link" onClick={toggleAuthMode} className="w-full text-gray-400">
+                  {isRegistering ? "Já tem uma conta? Faça login" : "Não tem uma conta? Registe-se"}
+                </Button>
               </form>
             </DialogContent>
           </Dialog>
 
-          {/* Profile Dialog */}
+          {/* Diálogo do Perfil */}
           <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
-            <DialogContent className="bg-gray-900 border-gray-700 max-w-2xl">
+            <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
               <DialogHeader>
-                <DialogTitle className="text-white">Perfil do Usuário</DialogTitle>
+                <DialogTitle className="text-white">Editar Perfil</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleProfileUpdate} className="space-y-6">
-                <div className="flex items-center gap-4">
-                  <img
-                    src={currentUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.email}`}
-                    alt={currentUser?.name}
-                    className="w-20 h-20 rounded-full border-2 border-emerald-500"
-                  />
-                  <div>
-                    <h3 className="text-white text-xl font-medium">{currentUser?.name}</h3>
-                    <p className="text-gray-400">{currentUser?.email}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Nome</label>
-                    <Input
-                      type="text"
-                      placeholder="Seu nome"
-                      value={profileForm.firstName}
-                      onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))}
-                      className={inputClasses}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-white mb-2 block">Sobrenome</label>
-                    <Input
-                      type="text"
-                      placeholder="Seu sobrenome"
-                      value={profileForm.lastName}
-                      onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))}
-                      className={inputClasses}
-                    />
-                  </div>
-                </div>
-
+              <form onSubmit={handleProfileUpdate} className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-white mb-2 block">Email</label>
+                  <label className="text-sm font-medium text-white mb-2 block">Nome</label>
+                  <Input
+                    type="text"
+                    placeholder="O seu nome"
+                    value={profileForm.firstName}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                    className={inputClasses}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-white mb-2 block">Sobrenome</label>
+                  <Input
+                    type="text"
+                    placeholder="O seu sobrenome"
+                    value={profileForm.lastName}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                    className={inputClasses}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-white mb-2 block">E-mail</label>
                   <Input
                     type="email"
-                    placeholder="seu@email.com"
+                    placeholder="o_seu@email.com"
                     value={profileForm.email}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))}
                     className={inputClasses}
@@ -4181,9 +4454,9 @@ export default function MTGCollectionManager() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-white mb-2 block">Bio</label>
+                  <label className="text-sm font-medium text-white mb-2 block">Biografia</label>
                   <Textarea
-                    placeholder="Conte um pouco sobre você..."
+                    placeholder="Conte um pouco sobre si..."
                     value={profileForm.bio}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))}
                     className={inputClasses}
@@ -4191,4 +4464,55 @@ export default function MTGCollectionManager() {
                   />
                 </div>
 
-                <div\
+                <div className="space-y-2 pt-4">
+                  <h4 className="text-white text-md font-semibold">Alterar Palavra-passe</h4>
+                  <div>
+                    <label className="text-sm font-medium text-white mb-2 block">Palavra-passe Atual</label>
+                    <Input
+                      type="password"
+                      placeholder="A sua palavra-passe atual (se for alterar)"
+                      value={profileForm.currentPassword}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
+                      className={inputClasses}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-white mb-2 block">Nova Palavra-passe</label>
+                    <Input
+                      type="password"
+                      placeholder="Nova palavra-passe"
+                      value={profileForm.newPassword}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, newPassword: e.target.value }))}
+                      className={inputClasses}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-white mb-2 block">Confirmar Nova Palavra-passe</label>
+                    <Input
+                      type="password"
+                      placeholder="Confirme a nova palavra-passe"
+                      value={profileForm.confirmNewPassword}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, confirmNewPassword: e.target.value }))}
+                      className={inputClasses}
+                    />
+                  </div>
+                </div>
+
+                <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={loginLoading}>
+                  {loginLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Guardar Alterações
+                    </>
+                  )}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+    </div>
+  )
+}
